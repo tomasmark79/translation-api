@@ -82,6 +82,9 @@ in your client to verify that Ollama and the model work together.
 
 Run only one API instance on a given port.
 
+## Credits
+  Thank you to colleagues Kozel and Hendrys for their help with testing the prealpha versions.
+
 ## Further documentation
 
 - [Deployment options](docs/deployment.md): persistent installation, configuration
