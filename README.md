@@ -16,9 +16,6 @@ If Ollama is not running in the background, keep `ollama serve` running in a
 separate terminal. See Ollama's installation documentation for operating-system
 and GPU requirements.
 
-This repository is private. You need GitHub access and an SSH key registered
-with GitHub to use the Git commands below.
-
 ## Windows
 
 Install Python 3.11 or newer and Git. In PowerShell, clone the repository and
