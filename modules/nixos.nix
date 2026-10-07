@@ -13,6 +13,8 @@ in
       serviceConfig = {
         ExecStart = lib.escapeShellArgs [
           (lib.getExe cfg.package)
+          "--host"
+          cfg.host
           "--port"
           (toString cfg.port)
           "--model"

@@ -25,7 +25,7 @@ ollama list
 nix run 'git+ssh://git@github.com/tomasmark79/translation-api?ref=main'
 ```
 
-The API listens on `127.0.0.1:5001`. Keep the command running while using a client.
+The API listens on `127.0.0.1:5001` by default. Keep the command running while using a client.
 If Ollama is installed as a CLI without a background service, first run
 `ollama serve` in another terminal. The package does not install Ollama, download
 models, select a GPU backend or change system permissions.
@@ -42,12 +42,20 @@ nix profile add 'git+ssh://git@github.com/tomasmark79/translation-api?ref=main'
 translation-api
 ```
 
-Select a different Ollama server, model or local port:
+Select a different Ollama server, model, listening address or port:
 
 ```sh
 translation-api --ollama-url http://127.0.0.1:11434 --model translategemma:4b --port 5001
 translation-api --help
 curl http://127.0.0.1:5001/health
+```
+
+To listen on all IPv4 interfaces at `0.0.0.0:5001`:
+
+```sh
+translation-api --host 0.0.0.0 --port 5001
+# Or pass arguments directly through nix run:
+nix run 'git+ssh://git@github.com/tomasmark79/translation-api?ref=main' -- --host 0.0.0.0 --port 5001
 ```
 
 Run only one API instance on a given port. All job state lives in memory;
@@ -74,6 +82,7 @@ modules = [
       enable = true;
       model = "translategemma:4b";
       ollamaUrl = "http://127.0.0.1:11434";
+      host = "127.0.0.1"; # Use "0.0.0.0" to listen on all IPv4 interfaces.
       port = 5001;
     };
   }
@@ -105,7 +114,8 @@ in `LANGUAGES` in `server.py`. Text is limited to 10,000 characters. One worker
 processes up to eight queued/running jobs in order. Results expire after ten
 minutes when another job is submitted, and retained jobs are capped at 128.
 
-The listener is loopback-only. Web page origins are rejected; Chrome extensions
+The listener defaults to loopback; `--host` (or the service's `host` option)
+changes the listening address. Web page origins are rejected; Chrome extensions
 call it from their service workers. Native local clients can call it without an
 Origin header. It has no remote-access authentication. Request text and
 translations are not written to HTTP logs.

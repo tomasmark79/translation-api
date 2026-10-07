@@ -8,10 +8,15 @@ self:
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       description = "Translation API package to run.";
     };
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "127.0.0.1";
+      description = "Address to listen on; use 0.0.0.0 for all IPv4 interfaces.";
+    };
     port = lib.mkOption {
       type = lib.types.port;
       default = 5001;
-      description = "Port on 127.0.0.1; the API stays local.";
+      description = "Port to listen on.";
     };
     model = lib.mkOption {
       type = lib.types.str;

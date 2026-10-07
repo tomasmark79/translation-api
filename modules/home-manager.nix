@@ -9,6 +9,8 @@ let
   cfg = config.services.translation-api;
   command = [
     (lib.getExe cfg.package)
+    "--host"
+    cfg.host
     "--port"
     (toString cfg.port)
     "--model"

@@ -278,7 +278,7 @@ class Jobs:
             return {"status": "failed", "error": str(error)}
 
 
-def make_server(port, jobs, backend="ollama"):
+def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
     model = jobs.translator.model if backend == "ollama" else MODEL
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -339,11 +339,13 @@ def make_server(port, jobs, backend="ollama"):
             except OverflowError as error:
                 self.reply(429, {"error": str(error)})
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return ThreadingHTTPServer((host, port), Handler)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Adresa pro naslouchání (výchozí: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5001)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--backend", choices=["ollama", "nllb"], default="ollama")
@@ -355,8 +357,8 @@ def main():
     translator = (OllamaTranslator(args.model, args.ollama_url) if args.backend == "ollama"
                   else NllbTranslator(args.threads))
     jobs = Jobs(translator)
-    server = make_server(args.port, jobs, args.backend)
-    print(f"Připraveno: http://127.0.0.1:{args.port} "
+    server = make_server(args.port, jobs, args.backend, args.host)
+    print(f"Připraveno: http://{args.host}:{server.server_port} "
           f"({args.backend}, {args.model if args.backend == 'ollama' else MODEL}; Ctrl+C)",
           flush=True)
     try:
