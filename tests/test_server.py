@@ -1,0 +1,196 @@
+import json
+from io import BytesIO
+from pathlib import Path
+import sys
+import threading
+import time
+import unittest
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from server import Jobs, OllamaTranslator, make_server, request_stream, split_text
+from unittest.mock import patch
+
+
+class FakeTranslator:
+    model = "test"
+    def language(self, code):
+        if code not in ("en", "cs"):
+            raise ValueError("Nepodporovaný jazyk")
+        return code
+
+    def translate(self, q, source, target, on_progress=None):
+        if q == "fail":
+            raise ValueError("Chyba modelu")
+        if on_progress:
+            on_progress("Ah")
+        return {"translatedText": "Ahoj", "detectedLanguage": {"language": "eng_Latn"}}
+
+
+class ServerTests(unittest.TestCase):
+    def setUp(self):
+        self.jobs = Jobs(FakeTranslator())
+        self.server = make_server(0, self.jobs)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.jobs.executor.shutdown()
+
+    def request(self, path, data=None, headers=None):
+        headers = {"Content-Type": "application/json", **(headers or {})}
+        req = Request(self.url + path, data=json.dumps(data).encode() if data is not None else None, headers=headers)
+        try:
+            response = urlopen(req, timeout=2)
+        except HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    def result(self, job_id):
+        for _ in range(100):
+            status, body = self.request("/translations/" + job_id)
+            if body["status"] != "pending":
+                return status, body
+            time.sleep(.01)
+        self.fail("Úloha nedoběhla")
+
+    def test_translation_and_health(self):
+        self.assertEqual(self.request("/health")[1]["status"], "ready")
+        status, body = self.request("/translate", {"q": "Hello"})
+        self.assertEqual(status, 202)
+        status, result = self.result(body["jobId"])
+        self.assertEqual(status, 200)
+        self.assertEqual(result["translatedText"], "Ahoj")
+
+    def test_partial_result_while_pending(self):
+        started = threading.Event()
+        finish = threading.Event()
+        def slow_translate(q, source, target, on_progress):
+            on_progress("Průběžný")
+            started.set()
+            finish.wait(2)
+            return {"translatedText": "Průběžný překlad"}
+        self.jobs.translator.translate = slow_translate
+        try:
+            _, body = self.request("/translate", {"q": "Hello"})
+            self.assertTrue(started.wait(1))
+            _, pending = self.request("/translations/" + body["jobId"])
+            self.assertEqual(pending, {"status": "pending", "partialText": "Průběžný"})
+        finally:
+            finish.set()
+        self.assertEqual(self.result(body["jobId"])[1]["translatedText"], "Průběžný překlad")
+
+    def test_model_error(self):
+        _, body = self.request("/translate", {"q": "fail"})
+        self.assertEqual(self.result(body["jobId"])[1]["status"], "failed")
+
+    def test_bad_inputs(self):
+        for data in [[], {"q": ""}, {"q": "x" * 10001}, {"q": "Hello", "target": "xx"}, {"q": "Hello", "source": []}]:
+            with self.subTest(data=str(data)[:50]):
+                self.assertEqual(self.request("/translate", data)[0], 400)
+        self.assertEqual(self.request("/translations/" + "a" * 32)[0], 404)
+        self.assertEqual(self.request("/translate", {"q": "Hello"}, {"Origin": "https://example.com"})[0], 403)
+        self.assertEqual(self.request("/translate", {"q": "Hello"}, {"Content-Type": "text/plain"})[0], 415)
+
+    def test_bounded_queue(self):
+        event = threading.Event()
+        self.jobs.translator.translate = lambda *args: event.wait(2)
+        try:
+            for _ in range(8):
+                self.assertEqual(self.request("/translate", {"q": "Hello"})[0], 202)
+            self.assertEqual(self.request("/translate", {"q": "Hello"})[0], 429)
+        finally:
+            event.set()
+
+    def test_chunking_does_not_lose_text(self):
+        for text in ["A sentence. " * 200, "連続した文字列" * 300, "one " + "x" * 2000]:
+            chunks = split_text(text, len, 100)
+            self.assertEqual("".join(chunks), text)
+            self.assertTrue(all(len(chunk) <= 100 for chunk in chunks))
+
+
+class OllamaTests(unittest.TestCase):
+    def test_ndjson_stream_emits_pieces_and_requires_completion(self):
+        pieces = []
+        payload = b''.join(json.dumps(item).encode() + b'\n' for item in [
+            {"message": {"content": "Ah"}, "done": False},
+            {"message": {"content": "oj"}, "done": False},
+            {"done": True, "done_reason": "stop"},
+        ])
+        with patch("server.urlopen", return_value=BytesIO(payload)):
+            request_stream("http://localhost/api/chat", {"stream": True}, pieces.append)
+        self.assertEqual(pieces, ["Ah", "oj"])
+        with patch("server.urlopen", return_value=BytesIO(payload.split(b'{"done": true')[0])):
+            with self.assertRaisesRegex(RuntimeError, "před dokončením"):
+                request_stream("http://localhost/api/chat", {"stream": True}, pieces.append)
+
+    def test_translation_uses_local_ollama_and_preserves_sentences(self):
+        requests = []
+
+        def fake_request(url, data=None, timeout=5):
+            requests.append((url, data))
+            return {"models": [{"name": "qwen3:8b"}]}
+
+        def fake_stream(url, data, on_piece, timeout=120):
+            requests.append((url, data))
+            on_piece("Přelo")
+            on_piece("ženo.")
+
+        progress = []
+        with patch("server.request_json", fake_request), patch("server.request_stream", fake_stream):
+            translator = OllamaTranslator("qwen3:8b", "http://127.0.0.1:11434")
+            result = translator.translate("Hello. Goodbye.", "en", "cs", progress.append)
+        self.assertEqual(result["translatedText"], "Přeloženo. Přeloženo.")
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(requests[1][1]["model"], "qwen3:8b")
+        self.assertFalse(requests[1][1]["think"])
+        self.assertTrue(requests[1][1]["stream"])
+        self.assertEqual(requests[1][1]["messages"][1]["content"], "Hello.")
+        self.assertIn("into Czech", requests[1][1]["messages"][0]["content"])
+        self.assertEqual(progress[-1], "Přeloženo. Přeloženo.")
+
+    def test_ollama_translates_czech_into_english(self):
+        requests = []
+        def fake_stream(url, data, on_piece, timeout=120):
+            requests.append(data)
+            on_piece("Hello.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:4b"}]}), \
+             patch("server.request_stream", fake_stream):
+            translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
+            result = translator.translate("Ahoj.", "cs", "en")
+        self.assertEqual(result["translatedText"], "Hello.")
+        self.assertIn("from Czech into English", requests[0]["messages"][0]["content"])
+
+    def test_trailing_space_does_not_send_empty_text_to_ollama(self):
+        requests = []
+        def fake_stream(url, data, on_piece, timeout=120):
+            text = data["messages"][1]["content"]
+            self.assertTrue(text.strip())
+            requests.append(text)
+            on_piece("Hello.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:4b"}]}), \
+             patch("server.request_stream", fake_stream):
+            translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
+            result = translator.translate("Ahoj. ", "cs", "en")
+        self.assertEqual(requests, ["Ahoj."])
+        self.assertEqual(result["translatedText"], "Hello.")
+
+    def test_ollama_error_is_not_translation(self):
+        def failed_stream(url, data, on_piece, timeout=120):
+            on_piece("Částečný výstup")
+            raise RuntimeError("Ollama nedokončila překlad. Zkus kratší text.")
+        with patch("server.request_json", return_value={"models": [{"name": "qwen3:8b"}]}), \
+             patch("server.request_stream", failed_stream):
+            translator = OllamaTranslator("qwen3:8b", "http://127.0.0.1:11434")
+            with self.assertRaisesRegex(RuntimeError, "nedokončila"):
+                translator.translate("Hello.", "en", "cs")
+
+
+if __name__ == "__main__":
+    unittest.main()
