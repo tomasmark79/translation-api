@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MODEL = "facebook/nllb-200-distilled-600M"
+OLLAMA_HEADERS = {"Content-Type": "application/json", "User-Agent": "translation-api/0.1.0"}
 # Všechny jazyky rozpoznávané knihovnou langdetect.
 LANGUAGES = dict(pair.split(":") for pair in """
 af:afr_Latn ar:arb_Arab bg:bul_Cyrl bn:ben_Beng ca:cat_Latn cs:ces_Latn
@@ -43,7 +44,7 @@ def split_text(text, token_count, limit=480):
 
 def request_json(url, data=None, timeout=5):
     body = json.dumps(data).encode() if data is not None else None
-    request = Request(url, body, {"Content-Type": "application/json"})
+    request = Request(url, body, OLLAMA_HEADERS)
     try:
         with urlopen(request, timeout=timeout) as response:
             return json.load(response)
@@ -59,7 +60,7 @@ def request_json(url, data=None, timeout=5):
 
 def request_stream(url, data, on_piece, timeout=120):
     """Čte NDJSON proud Ollamy a předává jen hotové části obsahu zprávy."""
-    request = Request(url, json.dumps(data).encode(), {"Content-Type": "application/json"})
+    request = Request(url, json.dumps(data).encode(), OLLAMA_HEADERS)
     try:
         with urlopen(request, timeout=timeout) as response:
             finished = False
