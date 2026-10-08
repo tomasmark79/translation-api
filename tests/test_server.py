@@ -17,12 +17,12 @@ class FakeTranslator:
     model = "test"
     def language(self, code):
         if code not in ("en", "cs"):
-            raise ValueError("Nepodporovaný jazyk")
+            raise ValueError("Unsupported language")
         return code
 
     def translate(self, q, source, target, on_progress=None):
         if q == "fail":
-            raise ValueError("Chyba modelu")
+            raise ValueError("Model error")
         if on_progress:
             on_progress("Ah")
         return {"translatedText": "Ahoj", "detectedLanguage": {"language": "eng_Latn"}}
@@ -58,7 +58,7 @@ class ServerTests(unittest.TestCase):
             if body["status"] != "pending":
                 return status, body
             time.sleep(.01)
-        self.fail("Úloha nedoběhla")
+        self.fail("The job did not finish")
 
     def test_translation_and_health(self):
         self.assertEqual(self.request("/health")[1]["status"], "ready")
@@ -85,6 +85,34 @@ class ServerTests(unittest.TestCase):
         finally:
             finish.set()
         self.assertEqual(self.result(body["jobId"])[1]["translatedText"], "Průběžný překlad")
+
+    def test_browser_extension_origins(self):
+        for origin in [
+            "chrome-extension://" + "a" * 32,
+            "moz-extension://01234567-89ab-4cde-8fab-0123456789ab",
+        ]:
+            with self.subTest(origin=origin):
+                headers = {"Origin": origin}
+                self.assertEqual(self.request("/health", headers=headers)[0], 200)
+                status, body = self.request("/translate", {"q": "Hello"}, headers)
+                self.assertEqual(status, 202)
+                path = "/translations/" + body["jobId"]
+                self.assertEqual(self.request(path, headers=headers)[0], 200)
+                self.assertEqual(self.result(body["jobId"])[1]["translatedText"], "Ahoj")
+
+    def test_invalid_origins_are_rejected(self):
+        for origin in [
+            "https://discord.com", "http://127.0.0.1:5001", "null",
+            "chrome-extension://" + "z" * 32,
+            "moz-extension://not-a-uuid",
+            "moz-extension://01234567-89ab-4cde-8fab-0123456789ab.evil.example",
+            "moz-extension://01234567-89ab-4cde-8fab-0123456789ab/",
+        ]:
+            with self.subTest(origin=origin):
+                headers = {"Origin": origin}
+                self.assertEqual(self.request("/health", headers=headers)[0], 403)
+                self.assertEqual(self.request("/translate", {"q": "Hello"}, headers)[0], 403)
+                self.assertEqual(self.request("/translations/" + "a" * 32, headers=headers)[0], 403)
 
     def test_model_error(self):
         _, body = self.request("/translate", {"q": "fail"})
@@ -127,7 +155,7 @@ class OllamaTests(unittest.TestCase):
             request_stream("http://localhost/api/chat", {"stream": True}, pieces.append)
         self.assertEqual(pieces, ["Ah", "oj"])
         with patch("server.urlopen", return_value=BytesIO(payload.split(b'{"done": true')[0])):
-            with self.assertRaisesRegex(RuntimeError, "před dokončením"):
+            with self.assertRaisesRegex(RuntimeError, "before the translation was complete"):
                 request_stream("http://localhost/api/chat", {"stream": True}, pieces.append)
 
     def test_translation_uses_local_ollama_and_preserves_sentences(self):
@@ -184,11 +212,11 @@ class OllamaTests(unittest.TestCase):
     def test_ollama_error_is_not_translation(self):
         def failed_stream(url, data, on_piece, timeout=120):
             on_piece("Částečný výstup")
-            raise RuntimeError("Ollama nedokončila překlad. Zkus kratší text.")
+            raise RuntimeError("Ollama did not complete the translation. Try a shorter text.")
         with patch("server.request_json", return_value={"models": [{"name": "qwen3:8b"}]}), \
              patch("server.request_stream", failed_stream):
             translator = OllamaTranslator("qwen3:8b", "http://127.0.0.1:11434")
-            with self.assertRaisesRegex(RuntimeError, "nedokončila"):
+            with self.assertRaisesRegex(RuntimeError, "did not complete"):
                 translator.translate("Hello.", "en", "cs")
 
 

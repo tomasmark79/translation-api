@@ -12,8 +12,10 @@ processes up to eight queued/running jobs in order. Results expire after ten
 minutes when another job is submitted, and retained jobs are capped at 128.
 
 The listener defaults to loopback; `--host` (or the service's `host` option)
-changes the listening address. Web page origins are rejected; Chrome extensions
-call it from their service workers. Native local clients can call it without an
+changes the listening address. Web page origins are rejected. Chrome extensions
+(`chrome-extension://<extension-id>`) call it from their service workers;
+Firefox extensions (`moz-extension://<uuid>`) call it from background scripts.
+Native local clients can call it without an
 Origin header. It has no remote-access authentication. Request text and
 translations are not written to HTTP logs.
 

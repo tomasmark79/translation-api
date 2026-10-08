@@ -1,4 +1,4 @@
-"""Místní překladové API přes Ollamu nebo volitelně NLLB na CPU."""
+"""Local translation API using Ollama or optionally NLLB on CPU."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 MODEL = "facebook/nllb-200-distilled-600M"
 OLLAMA_HEADERS = {"Content-Type": "application/json", "User-Agent": "translation-api/0.1.0"}
-# Všechny jazyky rozpoznávané knihovnou langdetect.
+# All languages recognized by langdetect.
 LANGUAGES = dict(pair.split(":") for pair in """
 af:afr_Latn ar:arb_Arab bg:bul_Cyrl bn:ben_Beng ca:cat_Latn cs:ces_Latn
 cy:cym_Latn da:dan_Latn de:deu_Latn el:ell_Grek en:eng_Latn es:spa_Latn
@@ -29,11 +29,11 @@ zh-cn:zho_Hans zh-tw:zho_Hant
 
 
 def split_text(text, token_count, limit=480):
-    """Dělí podle skutečného počtu tokenů; žádnou část potichu nezahazuje."""
+    """Split by actual token count without silently discarding any text."""
     if token_count(text) <= limit:
         return [text]
     if len(text) < 2:
-        raise ValueError("Text nelze rozdělit do vstupního limitu modelu.")
+        raise ValueError("Text cannot be split to fit the model's input limit.")
     middle = len(text) // 2
     boundaries = [m.end() for m in re.finditer(r"[.!?。！？]\s+|\s+", text)
                   if 0 < m.end() < len(text)]
@@ -55,11 +55,11 @@ def request_json(url, data=None, timeout=5):
             message = error.reason
         raise RuntimeError(f"Ollama HTTP {error.code}: {message}") from error
     except (URLError, TimeoutError) as error:
-        raise RuntimeError(f"Ollama není dostupná: {error}") from error
+        raise RuntimeError(f"Ollama is unavailable: {error}") from error
 
 
 def request_stream(url, data, on_piece, timeout=120):
-    """Čte NDJSON proud Ollamy a předává jen hotové části obsahu zprávy."""
+    """Read the Ollama NDJSON stream and forward message content chunks."""
     request = Request(url, json.dumps(data).encode(), OLLAMA_HEADERS)
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -75,15 +75,15 @@ def request_stream(url, data, on_piece, timeout=120):
                     on_piece(piece)
                 if item.get("done"):
                     if item.get("done_reason") != "stop":
-                        raise RuntimeError("Ollama nedokončila překlad. Zkus kratší text.")
+                        raise RuntimeError("Ollama did not complete the translation. Try a shorter text.")
                     finished = True
                     break
             if not finished:
-                raise RuntimeError("Spojení s Ollamou skončilo před dokončením překladu.")
+                raise RuntimeError("The connection to Ollama ended before the translation was complete.")
     except HTTPError as error:
         raise RuntimeError(f"Ollama HTTP {error.code}: {error.reason}") from error
     except (URLError, TimeoutError) as error:
-        raise RuntimeError(f"Ollama není dostupná: {error}") from error
+        raise RuntimeError(f"Ollama is unavailable: {error}") from error
 
 
 class OllamaTranslator:
@@ -92,7 +92,7 @@ class OllamaTranslator:
         self.url = url.rstrip("/")
         tags = request_json(f"{self.url}/api/tags")
         if not any(item.get("name") == model for item in tags.get("models", [])):
-            raise RuntimeError(f"Model {model} není v Ollamě. Zkontroluj `ollama list`.")
+            raise RuntimeError(f"Model {model} is not available in Ollama. Check `ollama list`.")
 
     @staticmethod
     def language(code):
@@ -100,7 +100,7 @@ class OllamaTranslator:
             return LANGUAGES[code]
         if code in LANGUAGES.values():
             return code
-        raise ValueError(f"Nepodporovaný jazyk: {code}")
+        raise ValueError(f"Unsupported language: {code}")
 
     def translate(self, q, source, target, on_progress=None):
         from langdetect import detect, LangDetectException
@@ -109,7 +109,7 @@ class OllamaTranslator:
             try:
                 source = detect(q)
             except LangDetectException as error:
-                raise ValueError("Jazyk nelze rozpoznat. Nastav SOURCE_LANGUAGE v content.js.") from error
+                raise ValueError("Unable to detect the language. Set SOURCE_LANGUAGE in content.js.") from error
         source, target = self.language(source), self.language(target)
         if source == target:
             return {"translatedText": q, "detectedLanguage": {"language": source}}
@@ -153,7 +153,7 @@ class OllamaTranslator:
                     }, append_piece, timeout=120)
                     text = "".join(pieces).strip()
                     if not text:
-                        raise RuntimeError("Ollama vrátila prázdný překlad.")
+                        raise RuntimeError("Ollama returned an empty translation.")
                     lines.append(text)
             translated.append(" ".join(lines))
         return {"translatedText": "".join(translated), "detectedLanguage": {"language": source}}
@@ -168,7 +168,7 @@ class NllbTranslator:
         DetectorFactory.seed = 0
         torch.set_num_threads(threads)
         self.torch = torch
-        print(f"Načítám {MODEL}…", flush=True)
+        print(f"Loading {MODEL}…", flush=True)
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(MODEL).to("cpu").eval()
 
@@ -176,7 +176,7 @@ class NllbTranslator:
         code = LANGUAGES.get(code, code)
         token = self.tokenizer.convert_tokens_to_ids(code)
         if not re.fullmatch(r"[a-z]{3}_[A-Z][a-z]{3}", code) or token == self.tokenizer.unk_token_id:
-            raise ValueError(f"Nepodporovaný jazyk: {code}")
+            raise ValueError(f"Unsupported language: {code}")
         return code
 
     def translate(self, q, source, target, on_progress=None):
@@ -186,20 +186,20 @@ class NllbTranslator:
             try:
                 source = detect(q)
             except LangDetectException as error:
-                raise ValueError("Jazyk nelze rozpoznat. Nastav SOURCE_LANGUAGE v content.js.") from error
+                raise ValueError("Unable to detect the language. Set SOURCE_LANGUAGE in content.js.") from error
         source, target = self.language(source), self.language(target)
         if source == target:
             return {"translatedText": q, "detectedLanguage": {"language": source}}
         self.tokenizer.src_lang = source
         count = lambda text: len(self.tokenizer(text)["input_ids"])
         translated = []
-        # Zachováme odstavce; dlouhé řádky rozdělíme bez oříznutí vstupu.
+        # Preserve paragraphs and split long lines without truncating the input.
         for part in re.split(r"(\n+)", q):
             if not part.strip():
                 translated.append(part)
                 continue
             lines = []
-            # NLLB je trénované na větách; více vět najednou může vynechávat.
+            # NLLB is trained on sentences and may omit text when given several at once.
             chunks = [chunk for sentence in re.split(r"(?<=[.!?。！？])\s+", part)
                       if sentence.strip()
                       for chunk in split_text(sentence, count)
@@ -215,10 +215,10 @@ class NllbTranslator:
                         do_sample=False,
                     )
                 if output.shape[-1] >= 513 or output[0, -1].item() != self.tokenizer.eos_token_id:
-                    raise ValueError("Výstup překročil limit modelu. Rozděl zprávu na kratší části.")
+                    raise ValueError("The output exceeded the model's limit. Split the message into shorter parts.")
                 result = self.tokenizer.decode(output[0], skip_special_tokens=True).strip()
                 if not result:
-                    raise ValueError("Model vrátil prázdný překlad.")
+                    raise ValueError("The model returned an empty translation.")
                 lines.append(result)
                 if on_progress:
                     on_progress("".join(translated) + " ".join(lines))
@@ -227,7 +227,7 @@ class NllbTranslator:
 
 
 class Jobs:
-    """Jedno pracovní vlákno drží překlady v pořadí a chrání sdílený model."""
+    """A single worker keeps translations in order and protects the shared model."""
     def __init__(self, translator):
         self.translator = translator
         self.executor = ThreadPoolExecutor(max_workers=1)
@@ -236,12 +236,12 @@ class Jobs:
 
     def submit(self, data):
         if not isinstance(data, dict):
-            raise ValueError("Požadavek musí být JSON objekt.")
+            raise ValueError("The request must be a JSON object.")
         q, source, target = data.get("q"), data.get("source", "auto"), data.get("target", "cs")
         if not isinstance(q, str) or not q.strip() or len(q) > 10000:
-            raise ValueError("Text musí mít 1 až 10000 znaků.")
+            raise ValueError("Text must contain 1 to 10000 characters.")
         if not isinstance(source, str) or not isinstance(target, str):
-            raise ValueError("Jazyky musí být řetězce.")
+            raise ValueError("Languages must be strings.")
         if source != "auto":
             self.translator.language(source)
         self.translator.language(target)
@@ -250,7 +250,7 @@ class Jobs:
             self.jobs = {key: value for key, value in self.jobs.items()
                          if value["created"] > now - 600 or not value["future"].done()}
             if sum(not entry["future"].done() for entry in self.jobs.values()) >= 8:
-                raise OverflowError("Fronta překladů je plná. Zkus to za chvíli.")
+                raise OverflowError("The translation queue is full. Try again shortly.")
             if len(self.jobs) >= 128:
                 oldest = next(key for key, entry in self.jobs.items() if entry["future"].done())
                 del self.jobs[oldest]
@@ -282,7 +282,7 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
     model = jobs.translator.model if backend == "ollama" else MODEL
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
-            pass  # Zprávy ani překlady nezapisujeme do logů HTTP.
+            pass  # Do not write messages or translations to HTTP logs.
 
         def setup(self):
             super().setup()
@@ -299,8 +299,12 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
 
         def allowed(self):
             origin = self.headers.get("Origin", "")
-            if origin and not re.fullmatch(r"chrome-extension://[a-p]{32}", origin):
-                self.reply(403, {"error": "Požadavky webových stránek nejsou povoleny."})
+            if origin and not re.fullmatch(
+                r"(?:chrome-extension://[a-p]{32}|"
+                r"moz-extension://[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})",
+                origin,
+            ):
+                self.reply(403, {"error": "Requests from web pages are not allowed."})
                 return False
             return True
 
@@ -314,23 +318,23 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
                 try:
                     self.reply(200, jobs.get(self.path.rsplit("/", 1)[1]))
                 except KeyError:
-                    self.reply(404, {"error": "Překlad již není dostupný. Zkus to znovu."})
+                    self.reply(404, {"error": "The translation is no longer available. Try again."})
             else:
-                self.reply(404, {"error": "Neznámá cesta."})
+                self.reply(404, {"error": "Unknown path."})
 
         def do_POST(self):
             if not self.allowed():
                 return
             if self.path != "/translate":
-                self.reply(404, {"error": "Neznámá cesta."})
+                self.reply(404, {"error": "Unknown path."})
                 return
             if self.headers.get_content_type() != "application/json":
-                self.reply(415, {"error": "Použij Content-Type: application/json."})
+                self.reply(415, {"error": "Use Content-Type: application/json."})
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 65536:
-                    self.reply(413, {"error": "Neplatná velikost požadavku."})
+                    self.reply(413, {"error": "Invalid request size."})
                     return
                 data = json.loads(self.rfile.read(length))
                 self.reply(202, jobs.submit(data))
@@ -345,7 +349,7 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1",
-                        help="Adresa pro naslouchání (výchozí: 127.0.0.1)")
+                        help="Listening address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5001)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--backend", choices=["ollama", "nllb"], default="ollama")
@@ -353,12 +357,12 @@ def main():
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     args = parser.parse_args()
     if args.threads < 1:
-        parser.error("--threads musí být kladné číslo")
+        parser.error("--threads must be a positive number")
     translator = (OllamaTranslator(args.model, args.ollama_url) if args.backend == "ollama"
                   else NllbTranslator(args.threads))
     jobs = Jobs(translator)
     server = make_server(args.port, jobs, args.backend, args.host)
-    print(f"Připraveno: http://{args.host}:{server.server_port} "
+    print(f"Ready: http://{args.host}:{server.server_port} "
           f"({args.backend}, {args.model if args.backend == 'ollama' else MODEL}; Ctrl+C)",
           flush=True)
     try:
