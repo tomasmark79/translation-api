@@ -1,6 +1,6 @@
 # Translation API
 
-Local translation server for DiMeTrans, CzEn Composer and TranslatePlace.
+Local translation server with an HTTP API for applications and browser extensions.
 Run it on the same computer as your client. It uses Ollama with the
 `translategemma:4b` model.
 
