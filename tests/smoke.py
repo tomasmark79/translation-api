@@ -44,6 +44,9 @@ def request(url, data=None):
 
 
 def main():
+    # Nix runs this script as a standalone store file, outside the source tree.
+    metadata_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).resolve().parents[1] / "pyproject.toml"
+    version = tomllib.loads(metadata_path.read_text())["project"]["version"]
     ollama = ThreadingHTTPServer(("127.0.0.1", 0), OllamaStub)
     thread = threading.Thread(target=ollama.serve_forever, daemon=True)
     thread.start()
@@ -66,7 +69,6 @@ def main():
                 time.sleep(0.05)
         else:
             raise AssertionError("API did not become ready")
-        version = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())["project"]["version"]
         assert health == {"status": "ready", "version": version, "backend": "ollama",
                           "model": "translategemma:4b", "device": "ollama"}, health
         for text, expected in [

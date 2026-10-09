@@ -44,7 +44,7 @@
                 nativeBuildInputs = [ pkgs.python3 ];
               }
               ''
-                python ${./tests/smoke.py} ${self.packages.${system}.default}/bin/translation-api
+                python ${./tests/smoke.py} ${self.packages.${system}.default}/bin/translation-api ${./pyproject.toml}
                 touch "$out"
               '';
         }
