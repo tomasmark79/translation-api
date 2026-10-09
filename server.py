@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Tomáš Mark
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Local translation API using Ollama or optionally NLLB on CPU."""
 
 import argparse

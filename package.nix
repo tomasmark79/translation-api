@@ -7,6 +7,7 @@ python3Packages.buildPythonApplication {
     root = ./.;
     fileset = lib.fileset.unions [
       ./pyproject.toml
+      ./LICENSE
       ./server.py
       ./tests
     ];
@@ -23,6 +24,7 @@ python3Packages.buildPythonApplication {
   meta = {
     description = "Local asynchronous translation API backed by Ollama";
     homepage = "https://github.com/tomasmark79/translation-api";
+    license = lib.licenses.gpl3Plus;
     platforms = [
       "x86_64-linux"
       "aarch64-linux"

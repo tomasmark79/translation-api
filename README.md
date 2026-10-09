@@ -89,3 +89,8 @@ Run only one API instance on a given port.
 - [HTTP API](docs/api.md): endpoints and limits for client developers.
 - [Development and validation](docs/development.md): tests, CI and the optional
   NLLB backend.
+
+## License
+
+Translation API is licensed under the GNU General Public License, version 3 or
+any later version (SPDX: `GPL-3.0-or-later`). See [LICENSE](LICENSE).

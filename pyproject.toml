@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "translation-api"
 version = "0.1.0"
 description = "Local asynchronous translation API backed by Ollama"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["langdetect>=1.0.9"]
 
