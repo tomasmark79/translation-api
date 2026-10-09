@@ -15,6 +15,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MODEL = "facebook/nllb-200-distilled-600M"
+OLLAMA_READ_TIMEOUT_SECONDS = 10 * 60
+JOB_RETENTION_SECONDS = 10 * 60
 OLLAMA_HEADERS = {"Content-Type": "application/json", "User-Agent": "translation-api/0.1.0"}
 # All languages recognized by langdetect.
 LANGUAGES = dict(pair.split(":") for pair in """
@@ -129,7 +131,7 @@ def request_json(url, data=None, timeout=5):
         raise RuntimeError(f"Ollama is unavailable: {error}") from error
 
 
-def request_stream(url, data, on_piece, timeout=120):
+def request_stream(url, data, on_piece, timeout=OLLAMA_READ_TIMEOUT_SECONDS):
     """Read the Ollama NDJSON stream and forward message content chunks."""
     request = Request(url, json.dumps(data).encode(), OLLAMA_HEADERS)
     try:
@@ -221,7 +223,7 @@ class OllamaTranslator:
                             )},
                             {"role": "user", "content": chunk.strip()},
                         ],
-                    }, append_piece, timeout=120)
+                    }, append_piece)
                     text = "".join(pieces).strip()
                     if not text:
                         raise RuntimeError("Ollama returned an empty translation.")
@@ -323,20 +325,25 @@ class Jobs:
         with self.lock:
             now = time.monotonic()
             self.jobs = {key: value for key, value in self.jobs.items()
-                         if value["created"] > now - 600 or not value["future"].done()}
+                         if not value["future"].done() or value["finished"] > now - JOB_RETENTION_SECONDS}
             if sum(not entry["future"].done() for entry in self.jobs.values()) >= 8:
                 raise OverflowError("The translation queue is full. Try again shortly.")
             if len(self.jobs) >= 128:
                 oldest = next(key for key, entry in self.jobs.items() if entry["future"].done())
                 del self.jobs[oldest]
             job_id = uuid.uuid4().hex
-            entry = {"created": now, "future": None, "partialText": ""}
+            entry = {"finished": None, "future": None, "partialText": ""}
             self.jobs[job_id] = entry
             def on_progress(partial):
                 with self.lock:
                     entry["partialText"] = partial
-            entry["future"] = self.executor.submit(self.translator.translate,
-                                                    q, source, target, on_progress)
+            def translate():
+                try:
+                    return self.translator.translate(q, source, target, on_progress)
+                finally:
+                    with self.lock:
+                        entry["finished"] = time.monotonic()
+            entry["future"] = self.executor.submit(translate)
         return {"jobId": job_id, "status": "pending"}
 
     def get(self, job_id):

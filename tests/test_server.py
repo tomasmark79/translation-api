@@ -173,7 +173,53 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(all(len(chunk) <= 100 for chunk in chunks))
 
 
+class JobLifetimeTests(unittest.TestCase):
+    def test_retention_starts_after_completion_even_for_long_or_failed_jobs(self):
+        for fail in [False, True]:
+            with self.subTest(fail=fail):
+                clock = [0]
+                jobs = Jobs(FakeTranslator())
+                def translate(q, source, target, on_progress):
+                    if q == "Long text":
+                        clock[0] = 1000
+                        if fail:
+                            raise ValueError("Model error")
+                    return {"translatedText": "Finished"}
+                jobs.translator.translate = translate
+                try:
+                    with patch("server.time.monotonic", side_effect=lambda: clock[0]):
+                        job_id = jobs.submit({"q": "Long text"})["jobId"]
+                        future = jobs.jobs[job_id]["future"]
+                        if fail:
+                            with self.assertRaisesRegex(ValueError, "Model error"):
+                                future.result(timeout=2)
+                        else:
+                            future.result(timeout=2)
+                        clock[0] = 1001
+                        other_id = jobs.submit({"q": "Next"})["jobId"]
+                        jobs.jobs[other_id]["future"].result(timeout=2)
+                        self.assertEqual(jobs.get(job_id)["status"], "failed" if fail else "done")
+                        clock[0] = 1599
+                        other_id = jobs.submit({"q": "Still retained"})["jobId"]
+                        jobs.jobs[other_id]["future"].result(timeout=2)
+                        self.assertIn(job_id, jobs.jobs)
+                        clock[0] = 1601
+                        jobs.submit({"q": "After expiration"})
+                        with self.assertRaises(KeyError):
+                            jobs.get(job_id)
+                finally:
+                    jobs.executor.shutdown()
+
+
 class OllamaTests(unittest.TestCase):
+    def test_stream_allows_ten_minutes_for_network_reads(self):
+        response = BytesIO(b'{"done": true, "done_reason": "stop", "message": {"content": "Hello"}}\n')
+        pieces = []
+        with patch("server.urlopen", return_value=response) as open_url:
+            request_stream("http://127.0.0.1:11434/api/chat", {}, pieces.append)
+        self.assertEqual(open_url.call_args.kwargs["timeout"], 600)
+        self.assertEqual(pieces, ["Hello"])
+
     def test_auto_detection_and_german_target_use_human_readable_names(self):
         requests = []
         def fake_stream(url, data, on_piece, timeout=120):

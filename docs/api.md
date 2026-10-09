@@ -8,8 +8,14 @@
 
 `source` defaults to `auto`, `target` to `cs`. Supported language codes are listed
 in `LANGUAGES` in [`server.py`](../server.py). Text is limited to 10,000 characters. One worker
-processes up to eight queued/running jobs in order. Results expire after ten
-minutes when another job is submitted, and retained jobs are capped at 128.
+processes up to eight queued/running jobs in order. Completed and failed results
+expire ten minutes after completion when another job is submitted, and retained
+jobs are capped at 128. Queued and running jobs do not expire.
+
+Ollama connections allow up to ten minutes for a blocking network operation,
+including waiting for the next stream data. This is not a total translation limit:
+long texts are translated in chunks and can take several minutes. Clients should
+allow at least fifteen minutes for a job, including time spent in the queue.
 
 Invisible editor placeholders U+FEFF and U+200B are removed from otherwise blank
 lines before language detection and translation. Spaces and line breaks are
