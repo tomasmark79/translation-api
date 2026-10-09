@@ -88,6 +88,56 @@ When changing the API port, update the client settings to match. The API has no
 remote-access authentication; the default loopback address is intended for
 clients on the same computer.
 
+## Updating a profile-based systemd service on Debian
+
+For a system service with `User=kozel` and
+`ExecStart=/home/kozel/.nix-profile/bin/translation-api ...`, update that exact
+user profile before restarting the service. Pulling a Git checkout or updating
+root's profile does not change this executable. A running process also keeps its
+old code until restarted, even after the profile has been upgraded.
+
+Open a login shell as the service user and inspect the installed entry:
+
+```sh
+sudo -iu kozel
+nix profile list --profile /home/kozel/.nix-profile
+```
+
+Find the entry whose flake URL points to `translation-api`. Replace
+`API_PROFILE_NAME` below with its `Name` from the list (older Nix versions may
+show a numeric index instead):
+
+```sh
+nix profile upgrade --refresh --profile /home/kozel/.nix-profile API_PROFILE_NAME
+/home/kozel/.nix-profile/bin/translation-api --version
+```
+
+Check the original flake URL too: an entry tracking `main` can fetch a newer
+commit, while an explicitly pinned revision cannot. If the entry points to a
+local checkout, update that checkout first. `--refresh` refreshes cached source
+lookups; it does not change the entry's configured source or branch.
+
+After the profile command reports the intended API version, leave the service
+user's shell, restart the system service, and check the running API:
+
+```sh
+exit
+sudo systemctl restart translation-api.service
+sudo systemctl status translation-api.service --no-pager
+curl http://127.0.0.1:5001/health
+```
+
+Restart after active translations have finished: restarting discards jobs and
+results. The `/health` response should now include the same `version` as the
+profile executable. `systemctl daemon-reload` is needed only if the unit file
+was changed; it does not upgrade a Nix package.
+
+If the local health check is current but the public URL is not, check whether
+the reverse proxy or tunnel points to a different API instance. For startup
+errors, inspect `sudo journalctl -u translation-api.service -n 50 --no-pager`.
+See the [Nix profile upgrade reference](https://nix.dev/manual/nix/stable/command-ref/new-cli/nix3-profile-upgrade.html)
+for package selection and pinned-reference behavior.
+
 ## Automatic startup with Home Manager
 
 Add the input to your flake:
