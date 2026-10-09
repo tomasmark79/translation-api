@@ -1,7 +1,7 @@
 # HTTP API
 
 - `GET /health`: returns `status`, `backend`, `model` and `device`.
-- `POST /translate`: accepts `{"q":"Hello","source":"en","target":"cs"}`;
+- `POST /translate`: accepts `{"q":"Hello","source":"auto","target":"cs"}`;
   returns HTTP 202 with `jobId` and `status: pending`.
 - `GET /translations/<jobId>`: returns `pending` with `partialText`, `done` with
   `translatedText` and `detectedLanguage`, or `failed` with `error`.
@@ -16,6 +16,27 @@ lines before language detection and translation. Spaces and line breaks are
 preserved by this normalization; characters within nonempty text and language
 joiners such as U+200C are kept. Input containing only whitespace and these
 placeholders is rejected. The 10,000-character limit applies before normalization.
+
+## Choosing the target language
+
+Every client can choose the target independently in each `POST /translate` request.
+Use `source: "auto"`, or omit `source`, for automatic source detection. `target`
+accepts language codes such as `cs` (Czech), `en` (English), `de` (German), `fr`
+(French), `es` (Spanish) and `pl` (Polish). Omitting `target` keeps the default `cs`;
+`target: "auto"` is invalid. Explicit source codes remain available to existing
+clients.
+
+For example, an external program can request German output with automatic detection:
+
+```sh
+curl -H 'Content-Type: application/json' \
+  -d '{"q":"Good morning!","source":"auto","target":"de"}' \
+  http://127.0.0.1:5001/translate
+```
+
+Poll `GET /translations/<jobId>` using the returned `jobId` until `status` is
+`done` or `failed`. The target belongs to that job; it is not a server-wide setting.
+Ollama prompts use human-readable names for all supported language codes.
 
 The listener defaults to loopback; `--host` (or the service's `host` option)
 changes the listening address. Web page origins are rejected. Chrome extensions

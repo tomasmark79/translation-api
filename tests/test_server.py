@@ -16,7 +16,7 @@ from unittest.mock import patch
 class FakeTranslator:
     model = "test"
     def language(self, code):
-        if code not in ("en", "cs"):
+        if code not in ("en", "cs", "de"):
             raise ValueError("Unsupported language")
         return code
 
@@ -67,6 +67,21 @@ class ServerTests(unittest.TestCase):
         status, result = self.result(body["jobId"])
         self.assertEqual(status, 200)
         self.assertEqual(result["translatedText"], "Ahoj")
+
+    def test_external_clients_choose_target_and_default_to_auto_source(self):
+        received = []
+        def translate(q, source, target, on_progress):
+            received.append((source, target))
+            return {"translatedText": f"Translation into {target}"}
+        self.jobs.translator.translate = translate
+        for target in ["cs", "en", "de"]:
+            with self.subTest(target=target):
+                status, job = self.request("/translate", {"q": "Hello", "target": target})
+                self.assertEqual(status, 202)
+                result = self.result(job["jobId"])[1]
+                self.assertEqual(result["translatedText"], f"Translation into {target}")
+                self.assertEqual(received[-1], ("auto", target))
+        self.assertEqual(self.request("/translate", {"q": "Hello", "target": "auto"})[0], 400)
 
     def test_http_normalizes_blank_lines_and_rejects_placeholder_only_input(self):
         received = []
@@ -159,6 +174,19 @@ class ServerTests(unittest.TestCase):
 
 
 class OllamaTests(unittest.TestCase):
+    def test_auto_detection_and_german_target_use_human_readable_names(self):
+        requests = []
+        def fake_stream(url, data, on_piece, timeout=120):
+            requests.append(data)
+            on_piece("Guten Morgen.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:4b"}]}), \
+             patch("server.request_stream", fake_stream), patch("langdetect.detect", return_value="en") as detect:
+            translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
+            result = translator.translate("Good morning.\n \ufeff", "auto", "de")
+        detect.assert_called_once_with("Good morning.\n ")
+        self.assertIn("from English into German", requests[0]["messages"][0]["content"])
+        self.assertEqual(result["translatedText"], "Guten Morgen.\n ")
+
     def test_blank_line_placeholders_never_reach_ollama(self):
         requests = []
         def fake_stream(url, data, on_piece, timeout=120):
