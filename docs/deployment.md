@@ -2,6 +2,54 @@
 
 [Back to the quick start](../README.md).
 
+## Enable Nix commands and flakes
+
+The Nix instructions in this project require both `nix-command` and `flakes`.
+If Nix reports that either experimental feature is disabled, enable them using
+the instructions for your system below.
+
+### NixOS
+
+Add this setting to your NixOS configuration, usually
+`/etc/nixos/configuration.nix`, inside the module's existing attribute set:
+
+```nix
+nix.settings.experimental-features = [ "nix-command" "flakes" ];
+```
+
+If this list already exists, add the two entries to it, keeping any other enabled
+features. Apply the configuration:
+
+```sh
+sudo nixos-rebuild switch
+```
+
+If you already manage NixOS with a flake, use your usual rebuild command instead.
+
+### Other Linux distributions and macOS
+
+Install [Nix](https://nixos.org/download/) first if it is not already available.
+Create `~/.config/nix/` if needed and add this line to `~/.config/nix/nix.conf`:
+
+```text
+extra-experimental-features = nix-command flakes
+```
+
+If `XDG_CONFIG_HOME` is set, use `$XDG_CONFIG_HOME/nix/nix.conf` instead. The
+`extra-` prefix preserves features enabled by the installer or system configuration.
+If an `extra-experimental-features` line already exists, add the names to that
+line. These user settings apply to subsequent Nix commands without a system rebuild.
+
+For a single command, you can enable both features without changing configuration:
+
+```sh
+nix --extra-experimental-features 'nix-command flakes' run . -- --version
+```
+
+Run this example from the `translation-api` checkout. See the
+[Nix configuration reference](https://nix.dev/manual/nix/stable/command-ref/conf-file.html)
+and [NixOS flakes documentation](https://wiki.nixos.org/wiki/Flakes) for details.
+
 ## Persistent Nix command and configuration
 
 Install the command persistently:

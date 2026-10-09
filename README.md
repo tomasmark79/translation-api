@@ -46,8 +46,9 @@ The virtual-environment commands do not require activation.
 
 ## Linux or macOS
 
-Install [Nix](https://nixos.org/download/) with the `nix-command` and `flakes`
-experimental features enabled, then run:
+Install [Nix](https://nixos.org/download/) and
+[enable `nix-command` and `flakes`](docs/deployment.md#enable-nix-commands-and-flakes),
+then run:
 
 ```sh
 nix run 'git+ssh://git@github.com/tomasmark79/translation-api?ref=main'
