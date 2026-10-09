@@ -17,10 +17,10 @@ sys.path.insert(0, str(ROOT))
 from server import OllamaTranslator
 
 
-def api_request(url, data=None):
+def api_request(url, data=None, method=None):
     body = json.dumps(data).encode("utf-8") if data is not None else None
     request = Request(url, body, {"Content-Type": "application/json",
-                                  "User-Agent": "translation-api/0.1.0"})
+                                  "User-Agent": "translation-api/0.1.0"}, method=method)
     try:
         with urlopen(request, timeout=20) as response:
             return json.load(response)
@@ -40,21 +40,41 @@ def translate_api(url, text, on_progress):
     job = api_request(url + "/translate", {"q": text, "source": "cs", "target": "en"})
     if not isinstance(job.get("jobId"), str) or not job["jobId"]:
         raise ValueError("Translation API did not return a jobId.")
+    job_url = url + "/translations/" + quote(job["jobId"], safe="")
+    print(f"Job: {job['jobId']}", file=sys.stderr, flush=True)
     deadline = time.monotonic() + 900
-    while time.monotonic() < deadline:
-        result = api_request(url + "/translations/" + quote(job["jobId"], safe=""))
-        status = result.get("status")
-        if status == "done":
-            if not isinstance(result.get("translatedText"), str):
-                raise ValueError("Translation API did not return translatedText.")
-            return result
-        if status == "failed":
-            raise RuntimeError(result.get("error", "Translation API job failed."))
-        if status != "pending":
-            raise ValueError(f"Unknown Translation API job status: {status!r}")
-        on_progress(result.get("partialText", ""))
-        time.sleep(1)
-    raise RuntimeError("Translation API job exceeded the 15-minute waiting limit.")
+    previous_state = None
+    try:
+        while time.monotonic() < deadline:
+            result = api_request(job_url)
+            status = result.get("status")
+            if status == "done":
+                if not isinstance(result.get("translatedText"), str):
+                    raise ValueError("Translation API did not return translatedText.")
+                return result
+            if status == "failed":
+                raise RuntimeError(result.get("error", "Translation API job failed."))
+            if status == "cancelled":
+                raise RuntimeError("The queued translation was cancelled.")
+            if status != "pending":
+                raise ValueError(f"Unknown Translation API job status: {status!r}")
+            state = (result.get("state"), result.get("queuePosition"))
+            if state != previous_state:
+                if state[0] == "queued":
+                    print(f"Queued: position {state[1]} (Ctrl+C to cancel).", file=sys.stderr, flush=True)
+                elif state[0] == "running":
+                    print("Running…", file=sys.stderr, flush=True)
+                previous_state = state
+            on_progress(result.get("partialText", ""))
+            time.sleep(1)
+        raise RuntimeError("Translation API job exceeded the 15-minute waiting limit.")
+    except KeyboardInterrupt:
+        try:
+            api_request(job_url, method="DELETE")
+            print("\nQueued translation cancelled on the server.", file=sys.stderr, flush=True)
+        except (OSError, ValueError, RuntimeError) as error:
+            print(f"\nCould not cancel server job: {error}", file=sys.stderr, flush=True)
+        raise
 
 
 def main():

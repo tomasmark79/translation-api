@@ -42,9 +42,10 @@ class ServerTests(unittest.TestCase):
         self.thread.join()
         self.jobs.executor.shutdown()
 
-    def request(self, path, data=None, headers=None):
+    def request(self, path, data=None, headers=None, method=None):
         headers = {"Content-Type": "application/json", **(headers or {})}
-        req = Request(self.url + path, data=json.dumps(data).encode() if data is not None else None, headers=headers)
+        req = Request(self.url + path, data=json.dumps(data).encode() if data is not None else None,
+                      headers=headers, method=method)
         try:
             response = urlopen(req, timeout=2)
         except HTTPError as error:
@@ -111,7 +112,8 @@ class ServerTests(unittest.TestCase):
             _, body = self.request("/translate", {"q": "Hello"})
             self.assertTrue(started.wait(1))
             _, pending = self.request("/translations/" + body["jobId"])
-            self.assertEqual(pending, {"status": "pending", "partialText": "Průběžný"})
+            self.assertEqual(pending, {"status": "pending", "state": "running",
+                                       "queuePosition": 0, "partialText": "Průběžný"})
         finally:
             finish.set()
         self.assertEqual(self.result(body["jobId"])[1]["translatedText"], "Průběžný překlad")
@@ -166,6 +168,47 @@ class ServerTests(unittest.TestCase):
         finally:
             event.set()
 
+    def test_queue_positions_cancellation_capacity_and_execution_order(self):
+        started, finish = threading.Event(), threading.Event()
+        received = []
+        def translate(q, source, target, on_progress):
+            received.append(q)
+            started.set()
+            self.assertTrue(finish.wait(5))
+            return {"translatedText": q}
+        self.jobs.translator.translate = translate
+        try:
+            _, first = self.request("/translate", {"q": "Running"})
+            self.assertTrue(started.wait(1))
+            path = "/translations/" + first["jobId"]
+            self.assertEqual(self.request(path)[1]["state"], "running")
+            self.assertEqual(self.request(path, method="DELETE")[0], 409)
+            queued = [self.request("/translate", {"q": f"Queued {i}"})[1] for i in range(7)]
+            for position, job in enumerate(queued, 1):
+                self.assertEqual(job["state"], "queued")
+                self.assertEqual(job["queuePosition"], position)
+                self.assertEqual(self.request("/translations/" + job["jobId"])[1]["queuePosition"], position)
+            self.assertEqual(self.request("/translate", {"q": "Overflow"})[0], 429)
+            cancelled_path = "/translations/" + queued[0]["jobId"]
+            self.assertEqual(self.request(cancelled_path, method="DELETE"), (200, {"status": "cancelled"}))
+            self.assertEqual(self.request(cancelled_path, method="DELETE")[0], 200)
+            self.assertEqual(self.request(cancelled_path)[1], {"status": "cancelled"})
+            self.assertEqual(self.request("/translations/" + queued[1]["jobId"])[1]["queuePosition"], 1)
+            status, extra = self.request("/translate", {"q": "Replacement"})
+            self.assertEqual(status, 202)
+            self.assertEqual(extra["queuePosition"], 7)
+        finally:
+            finish.set()
+        self.assertEqual(self.result(extra["jobId"])[1]["status"], "done")
+        self.assertEqual(received, ["Running", *[f"Queued {i}" for i in range(1, 7)], "Replacement"])
+        self.assertEqual(self.request(path, method="DELETE")[0], 409)
+
+    def test_cancel_rejects_missing_jobs_invalid_paths_and_web_origins(self):
+        path = "/translations/" + "a" * 32
+        self.assertEqual(self.request(path, method="DELETE")[0], 404)
+        self.assertEqual(self.request("/translate", method="DELETE")[0], 404)
+        self.assertEqual(self.request(path, method="DELETE", headers={"Origin": "https://example.com"})[0], 403)
+
     def test_chunking_does_not_lose_text(self):
         for text in ["A sentence. " * 200, "連続した文字列" * 300, "one " + "x" * 2000]:
             chunks = split_text(text, len, 100)
@@ -174,6 +217,31 @@ class ServerTests(unittest.TestCase):
 
 
 class JobLifetimeTests(unittest.TestCase):
+    def test_cancelled_job_retention_starts_at_cancellation(self):
+        jobs = Jobs(FakeTranslator())
+        started, finish = threading.Event(), threading.Event()
+        def translate(*args):
+            started.set()
+            finish.wait(5)
+            return {"translatedText": "Finished"}
+        jobs.translator.translate = translate
+        try:
+            jobs.submit({"q": "Blocking"})
+            self.assertTrue(started.wait(1))
+            with patch("server.time.monotonic", return_value=1000):
+                job_id = jobs.submit({"q": "Cancel me"})["jobId"]
+                jobs.cancel(job_id)
+            with patch("server.time.monotonic", return_value=1599):
+                jobs.submit({"q": "Still retained"})
+                self.assertEqual(jobs.get(job_id)["status"], "cancelled")
+            with patch("server.time.monotonic", return_value=1601):
+                jobs.submit({"q": "After expiration"})
+                with self.assertRaises(KeyError):
+                    jobs.get(job_id)
+        finally:
+            finish.set()
+            jobs.executor.shutdown()
+
     def test_retention_starts_after_completion_even_for_long_or_failed_jobs(self):
         for fail in [False, True]:
             with self.subTest(fail=fail):

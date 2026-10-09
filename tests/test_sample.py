@@ -1,6 +1,8 @@
 """Exercise the sample command against a local Ollama stub."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from contextlib import redirect_stderr
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -8,8 +10,10 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from server import Jobs, make_server
+from scripts.translate_sample import translate_api
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,6 +100,52 @@ class SampleTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("Model missing:model is not available", result.stderr)
         self.assertEqual(self.calls, ["/api/tags"])
+
+
+class ApiProgressTests(unittest.TestCase):
+    def test_queue_position_and_running_state_are_displayed(self):
+        responses = [
+            {"backend": "ollama", "model": "server:model"}, {"jobId": "a" * 32},
+            {"status": "pending", "state": "queued", "queuePosition": 2},
+            {"status": "pending", "state": "queued", "queuePosition": 1},
+            {"status": "pending", "state": "running", "queuePosition": 0, "partialText": "Good"},
+            {"status": "done", "translatedText": "Good day."},
+        ]
+        output, progress = StringIO(), []
+        with patch("scripts.translate_sample.api_request", side_effect=responses), \
+             patch("scripts.translate_sample.time.sleep"), redirect_stderr(output):
+            self.assertEqual(translate_api("http://api", "Dobrý den.", progress.append)["translatedText"], "Good day.")
+        self.assertIn("Queued: position 2", output.getvalue())
+        self.assertIn("Queued: position 1", output.getvalue())
+        self.assertIn("Running…", output.getvalue())
+        self.assertEqual(progress[-1], "Good")
+
+    def test_keyboard_interrupt_cancels_the_submitted_job(self):
+        responses = [{"model": "test"}, {"jobId": "a" * 32}, KeyboardInterrupt(), {"status": "cancelled"}]
+        with patch("scripts.translate_sample.api_request", side_effect=responses) as request, \
+             redirect_stderr(StringIO()) as output:
+            with self.assertRaises(KeyboardInterrupt):
+                translate_api("http://api/", "Dobrý den.", lambda _: None)
+        self.assertEqual(request.call_args.args, ("http://api/translations/" + "a" * 32,))
+        self.assertEqual(request.call_args.kwargs, {"method": "DELETE"})
+        self.assertIn("cancelled on the server", output.getvalue())
+
+    def test_interrupt_reports_running_job_cannot_be_cancelled(self):
+        responses = [{"model": "test"}, {"jobId": "a" * 32}, KeyboardInterrupt(),
+                     RuntimeError("Translation API HTTP 409: Only queued translations can be cancelled.")]
+        with patch("scripts.translate_sample.api_request", side_effect=responses), \
+             redirect_stderr(StringIO()) as output:
+            with self.assertRaises(KeyboardInterrupt):
+                translate_api("http://api", "Dobrý den.", lambda _: None)
+        self.assertIn("Could not cancel server job", output.getvalue())
+        self.assertNotIn("cancelled on the server", output.getvalue())
+
+    def test_cancelled_job_is_reported(self):
+        with patch("scripts.translate_sample.api_request", side_effect=[
+            {"model": "test"}, {"jobId": "a" * 32}, {"status": "cancelled"},
+        ]), redirect_stderr(StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "was cancelled"):
+                translate_api("http://api", "Dobrý den.", lambda _: None)
 
 
 class ApiSampleTests(unittest.TestCase):

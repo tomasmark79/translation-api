@@ -332,32 +332,65 @@ class Jobs:
                 oldest = next(key for key, entry in self.jobs.items() if entry["future"].done())
                 del self.jobs[oldest]
             job_id = uuid.uuid4().hex
-            entry = {"finished": None, "future": None, "partialText": ""}
+            entry = {"finished": None, "future": None, "partialText": "", "state": "queued"}
             self.jobs[job_id] = entry
             def on_progress(partial):
                 with self.lock:
                     entry["partialText"] = partial
             def translate():
+                with self.lock:
+                    entry["state"] = "running"
                 try:
                     return self.translator.translate(q, source, target, on_progress)
                 finally:
                     with self.lock:
                         entry["finished"] = time.monotonic()
             entry["future"] = self.executor.submit(translate)
-        return {"jobId": job_id, "status": "pending"}
+            pending = self._pending(entry)
+        return {"jobId": job_id, **pending}
+
+    def _pending(self, entry):
+        """Describe unfinished work while holding self.lock; positions start at 1."""
+        if entry["state"] == "running" or entry["future"].running():
+            return {"status": "pending", "state": "running", "queuePosition": 0,
+                    "partialText": entry["partialText"]}
+        position = 0
+        for queued in self.jobs.values():
+            if not queued["future"].running() and not queued["future"].done():
+                position += 1
+            if queued is entry:
+                break
+        return {"status": "pending", "state": "queued", "queuePosition": position,
+                "partialText": ""}
 
     def get(self, job_id):
         with self.lock:
             entry = self.jobs.get(job_id)
-        if entry is None:
-            raise KeyError(job_id)
-        future = entry["future"]
-        if not future.done():
-            return {"status": "pending", "partialText": entry["partialText"]}
+            if entry is None:
+                raise KeyError(job_id)
+            future = entry["future"]
+            if future.cancelled():
+                return {"status": "cancelled"}
+            if not future.done():
+                return self._pending(entry)
         try:
             return {"status": "done", **future.result()}
         except Exception as error:
             return {"status": "failed", "error": str(error)}
+
+    def cancel(self, job_id):
+        with self.lock:
+            entry = self.jobs.get(job_id)
+            if entry is None:
+                raise KeyError(job_id)
+            future = entry["future"]
+            if future.cancelled():
+                return {"status": "cancelled"}
+            # Future.cancel() atomically refuses work already picked up by the worker.
+            if not future.cancel():
+                raise ValueError("Only queued translations can be cancelled.")
+            entry["finished"] = time.monotonic()
+            return {"status": "cancelled"}
 
 
 def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
@@ -403,6 +436,19 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
                     self.reply(404, {"error": "The translation is no longer available. Try again."})
             else:
                 self.reply(404, {"error": "Unknown path."})
+
+        def do_DELETE(self):
+            if not self.allowed():
+                return
+            if not re.fullmatch(r"/translations/[a-f0-9]{32}", self.path):
+                self.reply(404, {"error": "Unknown path."})
+                return
+            try:
+                self.reply(200, jobs.cancel(self.path.rsplit("/", 1)[1]))
+            except KeyError:
+                self.reply(404, {"error": "The translation is no longer available. Try again."})
+            except ValueError as error:
+                self.reply(409, {"error": str(error)})
 
         def do_POST(self):
             if not self.allowed():

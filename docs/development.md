@@ -47,6 +47,9 @@ nix develop --command python scripts/translate_sample.py \
 
 This mode submits a Czech-to-English job and polls for its result for up to 15
 minutes, including queue time. It reports the backend and model from `/health`.
+On servers supporting queue details, it also prints the waiting position and
+when translation starts. Ctrl+C attempts to cancel the submitted job; cancellation
+succeeds only while the job is still queued. A running job continues on the server.
 The model and upstream Ollama address are configured on that server; `--model`
 cannot override them. `--ollama-url` is for an actual Ollama endpoint exposing
 `/api/tags` and `/api/chat`, whereas `--api-url` uses `/health`, `/translate` and
@@ -59,7 +62,7 @@ elapsed time on stderr. The translated text is hidden to keep server timing
 comparisons readable. To inspect it, uncomment the `print(result["translatedText"],
 flush=True)` line in `scripts/translate_sample.py`. Interactive terminals also show
 generated-character progress. Long samples may take several minutes; Ctrl+C cancels
-the local command (a submitted API job continues on the server). This is a manual quality and timing check, not an assertion that
+the local command. This is a manual quality and timing check, not an assertion that
 a translation is linguistically correct.
 
 ## Optional NLLB backend
