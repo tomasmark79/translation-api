@@ -1,6 +1,8 @@
 # HTTP API
 
-- `GET /health`: returns `status`, `backend`, `model` and `device`.
+- `GET /health`: returns `status`, `version`, `backend`, `model` and `device`.
+  `version` identifies the running API release (currently `0.2.0`); older servers
+  may omit it. It is independent of the Ollama version.
 - `POST /translate`: accepts `{"q":"Hello","source":"auto","target":"cs"}`;
   returns HTTP 202 with `jobId` and `status: pending`.
 - `GET /translations/<jobId>`: returns `pending` with `partialText`, `done` with

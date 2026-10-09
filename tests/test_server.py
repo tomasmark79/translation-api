@@ -4,12 +4,13 @@ from pathlib import Path
 import sys
 import threading
 import time
+import tomllib
 import unittest
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import Jobs, OllamaTranslator, make_server, normalize_translation_text, request_stream, split_text
+from server import VERSION, Jobs, OllamaTranslator, make_server, normalize_translation_text, request_stream, split_text
 from unittest.mock import patch
 
 
@@ -62,7 +63,11 @@ class ServerTests(unittest.TestCase):
         self.fail("The job did not finish")
 
     def test_translation_and_health(self):
-        self.assertEqual(self.request("/health")[1]["status"], "ready")
+        health = self.request("/health")[1]
+        self.assertEqual(health["status"], "ready")
+        self.assertEqual(health["version"], VERSION)
+        metadata = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+        self.assertEqual(health["version"], metadata["project"]["version"])
         status, body = self.request("/translate", {"q": "Hello"})
         self.assertEqual(status, 202)
         status, result = self.result(body["jobId"])

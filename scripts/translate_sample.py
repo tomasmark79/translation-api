@@ -14,13 +14,13 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from server import OllamaTranslator
+from server import OllamaTranslator, VERSION
 
 
 def api_request(url, data=None, method=None):
     body = json.dumps(data).encode("utf-8") if data is not None else None
     request = Request(url, body, {"Content-Type": "application/json",
-                                  "User-Agent": "translation-api/0.1.0"}, method=method)
+                                  "User-Agent": f"translation-api/{VERSION}"}, method=method)
     try:
         with urlopen(request, timeout=20) as response:
             return json.load(response)
@@ -34,7 +34,8 @@ def api_request(url, data=None, method=None):
 def translate_api(url, text, on_progress):
     url = url.rstrip("/")
     health = api_request(url + "/health")
-    print(f"Translation API: {url}\nBackend: {health.get('backend', 'unknown')}\n"
+    print(f"Translation API: {url}\nServer version: {health.get('version', 'unknown (not reported)')}\n"
+          f"Backend: {health.get('backend', 'unknown')}\n"
           f"Model: {health.get('model', 'unknown')}", file=sys.stderr, flush=True)
     print("Translating…", file=sys.stderr, flush=True)
     job = api_request(url + "/translate", {"q": text, "source": "cs", "target": "en"})

@@ -46,7 +46,8 @@ nix develop --command python scripts/translate_sample.py \
 ```
 
 This mode submits a Czech-to-English job and polls for its result for up to 15
-minutes, including queue time. It reports the backend and model from `/health`.
+minutes, including queue time. It reports the server version, backend and model
+from `/health`; older servers without a version report `unknown (not reported)`.
 On servers supporting queue details, it also prints the waiting position and
 when translation starts. Ctrl+C attempts to cancel the submitted job; cancellation
 succeeds only while the job is still queued. A running job continues on the server.

@@ -14,10 +14,11 @@ import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+VERSION = "0.2.0"
 MODEL = "facebook/nllb-200-distilled-600M"
 OLLAMA_READ_TIMEOUT_SECONDS = 10 * 60
 JOB_RETENTION_SECONDS = 10 * 60
-OLLAMA_HEADERS = {"Content-Type": "application/json", "User-Agent": "translation-api/0.1.0"}
+OLLAMA_HEADERS = {"Content-Type": "application/json", "User-Agent": f"translation-api/{VERSION}"}
 # All languages recognized by langdetect.
 LANGUAGES = dict(pair.split(":") for pair in """
 af:afr_Latn ar:arb_Arab bg:bul_Cyrl bn:ben_Beng ca:cat_Latn cs:ces_Latn
@@ -427,7 +428,7 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
             if not self.allowed():
                 return
             if self.path == "/health":
-                self.reply(200, {"status": "ready", "backend": backend, "model": model,
+                self.reply(200, {"status": "ready", "version": VERSION, "backend": backend, "model": model,
                                  "device": "ollama" if backend == "ollama" else "cpu"})
             elif re.fullmatch(r"/translations/[a-f0-9]{32}", self.path):
                 try:
@@ -476,6 +477,7 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=f"translation-api {VERSION}")
     parser.add_argument("--host", default="127.0.0.1",
                         help="Listening address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5001)
@@ -490,7 +492,7 @@ def main():
                   else NllbTranslator(args.threads))
     jobs = Jobs(translator)
     server = make_server(args.port, jobs, args.backend, args.host)
-    print(f"Ready: http://{args.host}:{server.server_port} "
+    print(f"Translation API {VERSION} ready: http://{args.host}:{server.server_port} "
           f"({args.backend}, {args.model if args.backend == 'ollama' else MODEL}; Ctrl+C)",
           flush=True)
     try:

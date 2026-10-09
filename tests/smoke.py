@@ -7,6 +7,8 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 
@@ -64,7 +66,8 @@ def main():
                 time.sleep(0.05)
         else:
             raise AssertionError("API did not become ready")
-        assert health == {"status": "ready", "backend": "ollama",
+        version = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())["project"]["version"]
+        assert health == {"status": "ready", "version": version, "backend": "ollama",
                           "model": "translategemma:4b", "device": "ollama"}, health
         for text, expected in [
             ("Ahoj. ", "Hello."),

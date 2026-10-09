@@ -1,7 +1,7 @@
 { lib, python3Packages }:
 python3Packages.buildPythonApplication {
   pname = "translation-api";
-  version = "0.1.0";
+  version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
   pyproject = true;
   src = lib.fileset.toSource {
     root = ./.;

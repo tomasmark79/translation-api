@@ -12,7 +12,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from server import Jobs, make_server
+from server import VERSION, Jobs, make_server
 from scripts.translate_sample import translate_api
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -191,6 +191,7 @@ class ApiSampleTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("Model: server:model", result.stderr)
         self.assertIn("Backend: ollama", result.stderr)
+        self.assertIn(f"Server version: {VERSION}", result.stderr)
         self.assertIn("Completed in", result.stderr)
         self.assertEqual(self.translator.received, ("Dobrý den.", "cs", "en"))
 
