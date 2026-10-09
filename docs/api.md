@@ -11,6 +11,12 @@ in `LANGUAGES` in [`server.py`](../server.py). Text is limited to 10,000 charact
 processes up to eight queued/running jobs in order. Results expire after ten
 minutes when another job is submitted, and retained jobs are capped at 128.
 
+Invisible editor placeholders U+FEFF and U+200B are removed from otherwise blank
+lines before language detection and translation. Spaces and line breaks are
+preserved by this normalization; characters within nonempty text and language
+joiners such as U+200C are kept. Input containing only whitespace and these
+placeholders is rejected. The 10,000-character limit applies before normalization.
+
 The listener defaults to loopback; `--host` (or the service's `host` option)
 changes the listening address. Web page origins are rejected. Chrome extensions
 (`chrome-extension://<extension-id>`) call it from their service workers;

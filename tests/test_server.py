@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import Jobs, OllamaTranslator, make_server, request_stream, split_text
+from server import Jobs, OllamaTranslator, make_server, normalize_translation_text, request_stream, split_text
 from unittest.mock import patch
 
 
@@ -67,6 +67,21 @@ class ServerTests(unittest.TestCase):
         status, result = self.result(body["jobId"])
         self.assertEqual(status, 200)
         self.assertEqual(result["translatedText"], "Ahoj")
+
+    def test_http_normalizes_blank_lines_and_rejects_placeholder_only_input(self):
+        received = []
+        def translate(q, source, target, on_progress):
+            received.append(q)
+            return {"translatedText": "Hello.\n "}
+        self.jobs.translator.translate = translate
+        status, job = self.request("/translate", {"q": "Ahoj.\n \ufeff\u200b"})
+        self.assertEqual(status, 202)
+        self.assertEqual(self.result(job["jobId"])[1]["status"], "done")
+        self.assertEqual(received, ["Ahoj.\n "])
+        for q in ["\n \ufeff\u200b", "\ufeff" * 10001]:
+            with self.subTest(q_length=len(q)):
+                self.assertEqual(self.request("/translate", {"q": q})[0], 400)
+        self.assertEqual(len(received), 1)
 
     def test_partial_result_while_pending(self):
         started = threading.Event()
@@ -144,6 +159,23 @@ class ServerTests(unittest.TestCase):
 
 
 class OllamaTests(unittest.TestCase):
+    def test_blank_line_placeholders_never_reach_ollama(self):
+        requests = []
+        def fake_stream(url, data, on_piece, timeout=120):
+            requests.append(data["messages"][1]["content"])
+            on_piece("Hello.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:4b"}]}), \
+             patch("server.request_stream", fake_stream):
+            translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
+            for marker in ["\ufeff", "\u200b", "\ufeff\u200b"]:
+                with self.subTest(marker=repr(marker)):
+                    requests.clear()
+                    progress = []
+                    result = translator.translate("Ahoj.\n " + marker + "\nAhoj.", "cs", "en", progress.append)
+                    self.assertEqual(requests, ["Ahoj.", "Ahoj."])
+                    self.assertEqual(result["translatedText"], "Hello.\n \nHello.")
+                    self.assertEqual(progress[-1], result["translatedText"])
+
     def test_ndjson_stream_emits_pieces_and_requires_completion(self):
         pieces = []
         payload = b''.join(json.dumps(item).encode() + b'\n' for item in [
@@ -218,6 +250,19 @@ class OllamaTests(unittest.TestCase):
             translator = OllamaTranslator("qwen3:8b", "http://127.0.0.1:11434")
             with self.assertRaisesRegex(RuntimeError, "did not complete"):
                 translator.translate("Hello.", "en", "cs")
+
+
+class NormalizationTests(unittest.TestCase):
+    def test_preserves_whitespace_and_characters_in_nonempty_text(self):
+        for text, expected in [
+            ("Ahoj.\r\n \ufeff\u200b\r\nDalší.", "Ahoj.\r\n \r\nDalší."),
+            ("Ahoj.\n\u00a0\u200b", "Ahoj.\n\u00a0"),
+            ("  Ahoj.\n ", "  Ahoj.\n "),
+            ("A\ufeffhoj\nمی\u200cروم\n\u200c", "A\ufeffhoj\nمی\u200cروم\n\u200c"),
+        ]:
+            with self.subTest(text=repr(text)):
+                self.assertEqual(normalize_translation_text(text), expected)
+                self.assertEqual(normalize_translation_text(expected), expected)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ python tests/smoke.py result/bin/translation-api
 
 Package checks run unit tests without a real model. The installed-command smoke
 test starts a local Ollama stub and verifies startup, health, asynchronous HTTP
-translation and the trailing-whitespace regression. CI runs these checks on
+translation, trailing whitespace and invisible editor placeholders on blank lines. CI runs these checks on
 Linux, Intel macOS and Apple Silicon macOS. It does not measure real model speed
 or prove GPU acceleration.
 

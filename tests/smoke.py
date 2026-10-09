@@ -66,16 +66,22 @@ def main():
             raise AssertionError("API did not become ready")
         assert health == {"status": "ready", "backend": "ollama",
                           "model": "translategemma:4b", "device": "ollama"}, health
-        status, job = request(url + "/translate", {"q": "Ahoj. ", "source": "cs", "target": "en"})
-        assert status == 202, status
-        for _ in range(100):
-            _, result = request(url + "/translations/" + job["jobId"])
-            if result["status"] != "pending":
-                break
-            time.sleep(0.01)
-        assert result["status"] == "done", result
-        assert result["translatedText"] == "Hello.", result
-        print("Installed CLI, health endpoint, async translation and trailing whitespace: OK")
+        for text, expected in [
+            ("Ahoj. ", "Hello."),
+            ("Ahoj.\n \ufeff", "Hello.\n "),
+            ("Ahoj.\n \u200b\ufeff", "Hello.\n "),
+        ]:
+            status, job = request(url + "/translate", {"q": text, "source": "cs", "target": "en"})
+            assert status == 202, status
+            for _ in range(100):
+                _, result = request(url + "/translations/" + job["jobId"])
+                if result["status"] != "pending":
+                    break
+                time.sleep(0.01)
+            assert result["status"] == "done", result
+            assert result["translatedText"] == expected, result
+        print("Installed CLI, health, async translation, trailing whitespace and editor placeholders: OK")
+
     finally:
         process.terminate()
         try:

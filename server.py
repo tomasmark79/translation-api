@@ -28,6 +28,15 @@ zh-cn:zho_Hans zh-tw:zho_Hant
 """.split())
 
 
+def normalize_translation_text(text):
+    """Remove editor placeholders only on otherwise blank lines."""
+    return "".join(
+        re.sub("[\u200b\ufeff]", "", part)
+        if re.fullmatch(r"[\s\u200b\ufeff]*", part) else part
+        for part in re.split(r"(\r\n|\r|\n)", text)
+    )
+
+
 def split_text(text, token_count, limit=480):
     """Split by actual token count without silently discarding any text."""
     if token_count(text) <= limit:
@@ -105,6 +114,7 @@ class OllamaTranslator:
     def translate(self, q, source, target, on_progress=None):
         from langdetect import detect, LangDetectException
 
+        q = normalize_translation_text(q)
         if source == "auto":
             try:
                 source = detect(q)
@@ -182,6 +192,7 @@ class NllbTranslator:
     def translate(self, q, source, target, on_progress=None):
         from langdetect import detect, LangDetectException
 
+        q = normalize_translation_text(q)
         if source == "auto":
             try:
                 source = detect(q)
@@ -238,7 +249,10 @@ class Jobs:
         if not isinstance(data, dict):
             raise ValueError("The request must be a JSON object.")
         q, source, target = data.get("q"), data.get("source", "auto"), data.get("target", "cs")
-        if not isinstance(q, str) or not q.strip() or len(q) > 10000:
+        if not isinstance(q, str) or len(q) > 10000:
+            raise ValueError("Text must contain 1 to 10000 characters.")
+        q = normalize_translation_text(q)
+        if not q.strip():
             raise ValueError("Text must contain 1 to 10000 characters.")
         if not isinstance(source, str) or not isinstance(target, str):
             raise ValueError("Languages must be strings.")
