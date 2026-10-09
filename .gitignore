@@ -6,3 +6,4 @@ dist/
 result
 result-*
 .venv/
+.vscode/
