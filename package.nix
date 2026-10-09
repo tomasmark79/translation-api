@@ -10,6 +10,8 @@ python3Packages.buildPythonApplication {
       ./LICENSE
       ./server.py
       ./tests
+      ./scripts
+      ./samples
     ];
   };
   build-system = [ python3Packages.setuptools ];
