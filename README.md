@@ -1,8 +1,8 @@
 # Translation API
 
 Local translation server with an HTTP API for applications and browser extensions.
-Run it on the same computer as your client. It uses Ollama with the
-`translategemma:4b` model.
+The default setup runs on the same computer as your client and uses Ollama with
+the `translategemma:4b` model.
 
 ## Before you start
 
@@ -13,7 +13,8 @@ ollama pull translategemma:4b
 ```
 
 If Ollama is not running in the background, keep `ollama serve` running in a
-separate terminal. See Ollama's installation documentation for operating-system
+separate terminal. By default, the API connects to Ollama at `http://127.0.0.1:11434`.
+Startup checks that Ollama lists the configured model. See Ollama's installation documentation for operating-system
 and GPU requirements.
 
 ## Windows
@@ -22,7 +23,7 @@ Install Python 3.11 or newer and Git. In PowerShell, clone the repository and
 open its folder:
 
 ```powershell
-git clone git@github.com:tomasmark79/translation-api.git
+git clone https://github.com/tomasmark79/translation-api.git
 cd translation-api
 ```
 
@@ -51,7 +52,7 @@ Install [Nix](https://nixos.org/download/) and
 then run:
 
 ```sh
-nix run 'git+ssh://git@github.com/tomasmark79/translation-api?ref=main'
+nix run 'git+https://github.com/tomasmark79/translation-api?ref=main'
 ```
 
 The Nix package supports Linux, Intel macOS and Apple Silicon macOS.
@@ -61,7 +62,8 @@ Ollama and the model must be installed separately as described above.
 
 Keep the server terminal open while using your client. Set the client's
 translation API address to `http://127.0.0.1:5001` if it is not already the
-default. Stop the server with Ctrl+C.
+default. The API listens only on the local computer by default. Stop the server
+with Ctrl+C.
 
 Check availability from another terminal. On Windows:
 
@@ -75,13 +77,15 @@ On Linux or macOS:
 curl http://127.0.0.1:5001/health
 ```
 
-The response should include `"status": "ready"`. Then request a translation
-in your client to verify that Ollama and the model work together.
+The response should include `"status": "ready"`. This confirms that the API is
+responding; it does not run a model test. Request a translation in your client
+to verify that Ollama and the model work together.
 
 Run only one API instance on a given port.
 
 ## Credits
-  Thank you to colleagues Kozel and Hendrys for their help with testing the prealpha versions.
+
+Thank you to colleagues Kozel and Hendrys for their help with testing the prealpha versions.
 
 ## Further documentation
 
