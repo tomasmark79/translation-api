@@ -4,8 +4,6 @@ Local translation server with an HTTP API for applications and browser extension
 The default setup runs on the same computer as your client and uses Ollama with
 the `translategemma:4b` model.
 
-![Translation workflow: send text, queue the request, translate and receive the result](simple-schema.png)
-
 ## Before you start
 
 Install and start [Ollama](https://ollama.com/download), then download the model:
