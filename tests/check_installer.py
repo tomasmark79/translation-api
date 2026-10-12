@@ -55,6 +55,8 @@ def main():
         subprocess.run([str(launcher), "--version"], env=env, check=True)
         subprocess.run([sys.executable, str(ROOT / "tests/smoke.py"), str(launcher)],
                        env=env, check=True)
+        subprocess.run([str(data / "venv/bin/python"), "-m", "unittest", "discover",
+                        "-s", "tests", "-p", "test_*.py"], env=env, cwd=ROOT, check=True)
         config.write_text(config.read_text() + "# preserved on update\n")
         saved_config = config.read_text()
         log.write_text("")
