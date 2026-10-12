@@ -14,6 +14,21 @@ translation, trailing whitespace and invisible editor placeholders on blank line
 Linux, Intel macOS and Apple Silicon macOS. It does not measure real model speed
 or prove GPU acceleration.
 
+To check the Linux installer, run as a regular user with Python 3.11+, venv and
+internet access:
+
+```sh
+bash -n install-linux.sh
+python3 tests/check_installer.py
+```
+
+This check installs real Python dependencies in a temporary home, runs the
+installed API against the Ollama stub, and checks updates, configuration
+preservation, uninstalling and refusal to replace unrelated files. It replaces
+systemctl with a stub, so it does not start or change real services. A separate
+Ubuntu CI job runs this check; actual systemd startup and other distributions
+still need platform testing.
+
 ## Translate the Czech book sample
 
 The repository includes a public-domain Czech excerpt from Božena Němcová's

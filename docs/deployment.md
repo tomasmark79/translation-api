@@ -2,6 +2,105 @@
 
 [Back to the quick start](../README.md).
 
+## Linux installation
+
+The Bash installer uses Python 3.11+ and installs the default Ollama backend in
+a user-owned virtual environment. It does not install Ollama, models, GPU drivers
+or the optional NLLB backend. Install Ollama and download the model as described
+in the [quick start](../README.md#before-you-start).
+
+Install prerequisites with your distribution's package manager:
+
+```sh
+# Debian 12+ / Ubuntu 24.04+
+sudo apt update
+sudo apt install python3 python3-venv python3-pip git
+
+# Fedora
+sudo dnf install python3 python3-pip git
+
+# Arch Linux / Manjaro
+sudo pacman -S --needed python python-pip git
+```
+
+On other distributions, install the equivalent packages and check that
+`python3 --version` reports 3.11 or newer. Then, as your regular user:
+
+```sh
+git clone https://github.com/tomasmark79/translation-api.git
+cd translation-api
+bash install-linux.sh
+~/.local/bin/translation-api
+```
+
+Installation needs internet access to download Python dependencies. The installer
+does not use sudo or modify system Python. Add `~/.local/bin` to your shell's
+`PATH` to use the short command `translation-api`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add that line to your shell profile to keep it for future sessions.
+
+### Configuration and automatic startup
+
+The application is installed in `~/.local/share/translation-api/`. Its launcher
+reads `~/.config/translation-api/arguments`, with one command-line argument per
+line. For example, the last two lines of the default file are:
+
+```text
+--ollama-url
+http://127.0.0.1:11434
+```
+
+Use no shell quoting in this file. Blank lines and lines starting with `#` are
+ignored. Manual command-line options override the corresponding saved options.
+The installer respects `XDG_DATA_HOME` and `XDG_CONFIG_HOME` when set; use the
+same values for installation, updates and uninstalling. Keep the installation
+at its original path because Python virtual environments are not portable.
+Installation paths must not contain dollar signs, which Python packaging treats
+as variable substitutions.
+
+For automatic startup, run from a regular login session with user systemd:
+
+```sh
+bash install-linux.sh --service
+systemctl --user status translation-api.service
+journalctl --user -u translation-api.service -n 50
+curl http://127.0.0.1:5001/health
+```
+
+The service starts when your user systemd session starts, normally at login.
+After editing the arguments file, restart it with
+`systemctl --user restart translation-api.service`. Ollama must be available
+with the configured model; the API retries startup through systemd if needed.
+The installer reports completion separately from API readiness: check `/health`
+and request a translation in your client. Run only one API instance per port.
+
+### Update or uninstall
+
+From your checkout:
+
+```sh
+git pull --ff-only
+bash install-linux.sh --update
+```
+
+Updates preserve configuration and restart an active service created by this
+installer. A manually started process needs to be stopped and started again.
+Use `--update --service` to enable the service during an update.
+
+```sh
+bash install-linux.sh --uninstall
+```
+
+Uninstalling stops and disables the installer's user service and removes its
+launcher and virtual environment. It preserves the arguments file, Git checkout,
+Ollama and models. The installer refuses to overwrite an existing launcher or
+service managed by another installation method. When migrating from Nix, first
+disable the previous API service through the configuration that created it.
+
 ## Enable Nix commands and flakes
 
 The Nix instructions in this project require both `nix-command` and `flakes`.

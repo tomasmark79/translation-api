@@ -17,7 +17,27 @@ separate terminal. By default, the API connects to Ollama at `http://127.0.0.1:1
 Startup checks that Ollama lists the configured model. See Ollama's installation documentation for operating-system
 and GPU requirements.
 
-## Linux or macOS
+## Linux: Debian, Ubuntu, Fedora and Arch
+
+Install Python 3.11 or newer, Git and venv/pip support using the
+[distribution commands](docs/deployment.md#linux-installation), then:
+
+```sh
+git clone https://github.com/tomasmark79/translation-api.git
+cd translation-api
+bash install-linux.sh
+~/.local/bin/translation-api
+```
+
+Run the installer as your regular user, without `sudo`. It installs the API in
+its own Python virtual environment. Ollama and the model are installed separately
+as described above. Use `bash install-linux.sh --service` instead to enable
+automatic startup in your user systemd session.
+
+See [deployment options](docs/deployment.md#linux-installation) for
+configuration, updates and uninstalling.
+
+## NixOS, Linux with Nix, or macOS
 
 Install [Nix](https://nixos.org/download/) and
 [enable `nix-command` and `flakes`](docs/deployment.md#enable-nix-commands-and-flakes),
@@ -92,8 +112,8 @@ Thank you to colleagues [Kozel](https://github.com/Richard-Hanus) and [Hendrys](
 
 ## Further documentation
 
-- [Deployment options](docs/deployment.md): persistent installation, configuration
-  and automatic startup with Home Manager or NixOS.
+- [Deployment options](docs/deployment.md): Linux installer, configuration,
+  updates and automatic startup, including Home Manager and NixOS.
 - [HTTP API](docs/api.md): endpoints and limits for client developers.
 - [Development and validation](docs/development.md): tests, CI, a Czech book sample
   for comparing translations and the optional NLLB backend.

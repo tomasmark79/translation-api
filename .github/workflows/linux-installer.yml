@@ -1,0 +1,15 @@
+name: Linux installer
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: bash -n install-linux.sh
+      - run: python3 tests/check_installer.py
