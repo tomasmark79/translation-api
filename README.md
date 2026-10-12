@@ -17,6 +17,19 @@ separate terminal. By default, the API connects to Ollama at `http://127.0.0.1:1
 Startup checks that Ollama lists the configured model. See Ollama's installation documentation for operating-system
 and GPU requirements.
 
+## Linux or macOS
+
+Install [Nix](https://nixos.org/download/) and
+[enable `nix-command` and `flakes`](docs/deployment.md#enable-nix-commands-and-flakes),
+then run:
+
+```sh
+nix run 'git+https://github.com/tomasmark79/translation-api?ref=main'
+```
+
+The Nix package supports Linux, Intel macOS and Apple Silicon macOS.
+Ollama and the model must be installed separately as described above.
+
 ## Windows
 
 Install Python 3.11 or newer and Git. In PowerShell, clone the repository and
@@ -45,18 +58,6 @@ py -m venv .venv
 Use the same Python executable to install dependencies and start the server.
 The virtual-environment commands do not require activation.
 
-## Linux or macOS
-
-Install [Nix](https://nixos.org/download/) and
-[enable `nix-command` and `flakes`](docs/deployment.md#enable-nix-commands-and-flakes),
-then run:
-
-```sh
-nix run 'git+https://github.com/tomasmark79/translation-api?ref=main'
-```
-
-The Nix package supports Linux, Intel macOS and Apple Silicon macOS.
-Ollama and the model must be installed separately as described above.
 
 ## Connect your client
 
@@ -65,16 +66,18 @@ translation API address to `http://127.0.0.1:5001` if it is not already the
 default. The API listens only on the local computer by default. Stop the server
 with Ctrl+C.
 
-Check availability from another terminal. On Windows:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:5001/health
-```
+Check availability from another terminal.
 
 On Linux or macOS:
 
 ```sh
 curl http://127.0.0.1:5001/health
+```
+
+On Windows:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5001/health
 ```
 
 The response should include `"status": "ready"`. This confirms that the API is
@@ -85,7 +88,7 @@ Run only one API instance on a given port.
 
 ## Credits
 
-Thank you to colleagues Kozel and Hendrys for their help with testing the prealpha versions.
+Thank you to colleagues [Kozel](https://github.com/Richard-Hanus) and [Hendrys](https://github.com/prostehendrys) for their help with testing.
 
 ## Further documentation
 
