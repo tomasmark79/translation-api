@@ -106,6 +106,18 @@ to verify that Ollama and the model work together.
 
 Run only one API instance on a given port.
 
+## How it works
+
+![Translation API flow: a client submits text, receives a job ID and polls for progress while a single worker translates through Ollama.](docs/api-flow.svg)
+
+The API validates each request and queues it for a single translation worker.
+The client receives a job ID immediately, then polls for progress and the final
+translation. Jobs and results are held in memory and are lost on restart.
+
+The diagram shows the default Ollama setup. It is a static overview; update it
+when the request flow changes. See the [HTTP API](docs/api.md) for endpoint details,
+queue cancellation and limits.
+
 ## Credits
 
 Thank you to colleagues [Kozel](https://github.com/Richard-Hanus) and [Hendrys](https://github.com/prostehendrys) for their help with testing.
