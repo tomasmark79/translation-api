@@ -404,6 +404,92 @@ class OllamaTests(unittest.TestCase):
                 translator.translate("Hello.", "en", "cs")
 
 
+class ModelSelectionTests(unittest.TestCase):
+    request = ServerTests.request
+    result = ServerTests.result
+
+    def setUp(self):
+        self.tags = patch("server.request_json", return_value={"models": [
+            {"name": "translategemma:4b"}, {"name": "qwen3:8b"}, {"name": "qwen3:latest"}]})
+        self.tags.start()
+        self.received = []
+        def stream(url, data, on_piece):
+            self.received.append(data)
+            on_piece("Translated by " + data["model"])
+        self.stream = patch("server.request_stream", side_effect=stream)
+        self.stream.start()
+        self.jobs = Jobs(OllamaTranslator("translategemma:4b", "http://ollama"))
+        self.server = make_server(0, self.jobs)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.jobs.executor.shutdown()
+        self.stream.stop()
+        self.tags.stop()
+
+    def test_job_model_override_does_not_change_default(self):
+        for override, expected in [(None, "translategemma:4b"), ("qwen3:8b", "qwen3:8b"),
+                                   (None, "translategemma:4b"), ("qwen3", "qwen3:latest")]:
+            payload = {"q": "Hello.", "source": "en", "target": "cs"}
+            if override is not None:
+                payload["model"] = override
+            status, job = self.request("/translate", payload)
+            self.assertEqual(status, 202)
+            self.assertEqual(job["model"], expected)
+            result = self.result(job["jobId"])[1]
+            self.assertEqual(result["model"], expected)
+            self.assertEqual(result["translatedText"], "Translated by " + expected)
+            self.assertEqual(self.received[-1]["model"], expected)
+            self.assertEqual(len(self.received[-1]["messages"]), 1 if expected.startswith("translategemma") else 2)
+            self.assertEqual(self.request("/health")[1]["model"], "translategemma:4b")
+        self.assertTrue(self.request("/health")[1]["capabilities"]["modelSelection"])
+
+    def test_queued_job_captures_its_own_model(self):
+        started, finish = threading.Event(), threading.Event()
+        def blocked_stream(url, data, on_piece):
+            started.set()
+            finish.wait(3)
+            on_piece(data["model"])
+        with patch("server.request_stream", side_effect=blocked_stream):
+            try:
+                jobs = []
+                for model in ("qwen3:8b", "translategemma:4b", "qwen3:latest"):
+                    status, job = self.request("/translate", {"q": "Hello", "source": "en", "target": "cs", "model": model})
+                    self.assertEqual(status, 202)
+                    jobs.append((model, job["jobId"]))
+                self.assertTrue(started.wait(1))
+            finally:
+                finish.set()
+            for model, job_id in jobs:
+                result = self.result(job_id)[1]
+                self.assertEqual(result["translatedText"], model)
+
+    def test_invalid_or_missing_models_are_rejected_before_queueing(self):
+        for model in (None, "", 12, [], "bad name", "missing:4b", "a" * 257):
+            with self.subTest(model=model):
+                status, body = self.request("/translate", {"q": "Hello", "model": model})
+                self.assertEqual(status, 400)
+                self.assertIn("error", body)
+        self.assertEqual(self.jobs.jobs, {})
+
+    def test_ollama_unavailable_returns_service_unavailable(self):
+        with patch("server.request_json", side_effect=RuntimeError("Ollama is unavailable")):
+            status, body = self.request("/translate", {"q": "Hello", "model": "qwen3:8b"})
+        self.assertEqual(status, 503)
+        self.assertIn("Ollama is unavailable", body["error"])
+
+    def test_non_ollama_backend_rejects_model_override(self):
+        self.jobs.translator = FakeTranslator()
+        status, body = self.request("/translate", {"q": "Hello", "model": "qwen3:8b"})
+        self.assertEqual(status, 400)
+        self.assertIn("only by the Ollama backend", body["error"])
+
+
 class NormalizationTests(unittest.TestCase):
     def test_preserves_whitespace_and_characters_in_nonempty_text(self):
         for text, expected in [

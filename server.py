@@ -14,7 +14,7 @@ import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 MODEL = "facebook/nllb-200-distilled-600M"
 OLLAMA_READ_TIMEOUT_SECONDS = 10 * 60
 JOB_RETENTION_SECONDS = 10 * 60
@@ -162,11 +162,14 @@ def request_stream(url, data, on_piece, timeout=OLLAMA_READ_TIMEOUT_SECONDS):
 
 class OllamaTranslator:
     def __init__(self, model, url):
-        self.model = model
         self.url = url.rstrip("/")
         tags = request_json(f"{self.url}/api/tags")
-        if not any(item.get("name") == model for item in tags.get("models", [])):
-            raise RuntimeError(f"Model {model} is not available in Ollama. Check `ollama list`.")
+        names = {item.get("name") for item in tags.get("models", [])}
+        # Ollama accepts an omitted tag as :latest; report the installed name.
+        resolved = model if model in names else model + ":latest"
+        if resolved not in names:
+            raise ValueError(f"Model {model} is not available in Ollama. Check `ollama list`.")
+        self.model = resolved
 
     @staticmethod
     def language(code):
@@ -339,6 +342,16 @@ class Jobs:
         if source != "auto":
             self.translator.language(source)
         self.translator.language(target)
+        translator = self.translator
+        if "model" in data:
+            model = data["model"]
+            if not isinstance(model, str) or not model or len(model) > 256 or any(c.isspace() or ord(c) < 32 for c in model):
+                raise ValueError("Model must be a nonempty name without whitespace (at most 256 characters).")
+            if not isinstance(self.translator, OllamaTranslator):
+                raise ValueError("Per-request model selection is supported only by the Ollama backend.")
+            # Each job owns its model selection; never mutate the server default.
+            # This only checks installed models. No download or load occurs here.
+            translator = OllamaTranslator(model, self.translator.url)
         with self.lock:
             now = time.monotonic()
             self.jobs = {key: value for key, value in self.jobs.items()
@@ -358,13 +371,14 @@ class Jobs:
                 with self.lock:
                     entry["state"] = "running"
                 try:
-                    return self.translator.translate(q, source, target, on_progress)
+                    return {**translator.translate(q, source, target, on_progress),
+                            "model": getattr(translator, "model", MODEL)}
                 finally:
                     with self.lock:
                         entry["finished"] = time.monotonic()
             entry["future"] = self.executor.submit(translate)
             pending = self._pending(entry)
-        return {"jobId": job_id, **pending}
+        return {"jobId": job_id, "model": getattr(translator, "model", MODEL), **pending}
 
     def _pending(self, entry):
         """Describe unfinished work while holding self.lock; positions start at 1."""
@@ -445,6 +459,7 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
                 return
             if self.path == "/health":
                 self.reply(200, {"status": "ready", "version": VERSION, "backend": backend, "model": model,
+                                 "capabilities": {"modelSelection": isinstance(jobs.translator, OllamaTranslator)},
                                  "device": "ollama" if backend == "ollama" else "cpu"})
             elif re.fullmatch(r"/translations/[a-f0-9]{32}", self.path):
                 try:
@@ -487,6 +502,8 @@ def make_server(port, jobs, backend="ollama", host="127.0.0.1"):
                 self.reply(400, {"error": str(error)})
             except OverflowError as error:
                 self.reply(429, {"error": str(error)})
+            except RuntimeError as error:
+                self.reply(503, {"error": str(error)})
 
     return ThreadingHTTPServer((host, port), Handler)
 

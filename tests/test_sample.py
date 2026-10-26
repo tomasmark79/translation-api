@@ -103,6 +103,19 @@ class SampleTests(unittest.TestCase):
 
 
 class ApiProgressTests(unittest.TestCase):
+    def test_explicit_model_is_submitted_to_capable_api(self):
+        responses = [
+            {"model": "default:4b", "capabilities": {"modelSelection": True}},
+            {"jobId": "a" * 32, "model": "other:12b"},
+            {"status": "done", "translatedText": "Hello", "model": "other:12b"},
+        ]
+        with patch("scripts.translate_sample.api_request", side_effect=responses) as request, \
+             redirect_stderr(StringIO()):
+            result = translate_api("http://api", "Ahoj", lambda _: None, model="other:12b")
+        self.assertEqual(result["model"], "other:12b")
+        self.assertEqual(request.call_args_list[1].args,
+                         ("http://api/translate", {"q": "Ahoj", "source": "cs", "target": "en", "model": "other:12b"}))
+
     def test_queue_position_and_running_state_are_displayed(self):
         responses = [
             {"backend": "ollama", "model": "server:model"}, {"jobId": "a" * 32},
@@ -202,13 +215,19 @@ class ApiSampleTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("Upstream model failed", result.stderr)
 
-    def test_api_model_override_and_mixed_endpoints_are_rejected(self):
-        for options in [("--model", "other:model"), ("--ollama-url", self.url)]:
+    def test_mixed_endpoints_are_rejected(self):
+        for options in [("--ollama-url", self.url)]:
             with self.subTest(options=options):
                 result = self.run_sample(*options)
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(result.stdout, "")
                 self.assertEqual(self.jobs.jobs, {})
+
+    def test_model_selection_on_unsupported_backend_is_reported(self):
+        result = self.run_sample("--model", "other:model")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("does not support per-request model selection", result.stderr)
+        self.assertEqual(self.jobs.jobs, {})
 
     def test_http_errors_are_reported_without_traceback(self):
         self.url += "wrong-path"

@@ -1,12 +1,13 @@
 # HTTP API
 
-- `GET /health`: returns `status`, `version`, `backend`, `model` and `device`.
-  `version` identifies the running API release (currently `0.2.0`); older servers
+- `GET /health`: returns `status`, `version`, `backend`, `model`, `device` and `capabilities`.
+  `version` identifies the running API release (currently `0.3.0`); older servers
   may omit it. It is independent of the Ollama version.
 - `POST /translate`: accepts `{"q":"Hello","source":"auto","target":"cs"}`;
-  returns HTTP 202 with `jobId` and `status: pending`.
+  optionally accepts `model` for Ollama. Returns HTTP 202 with `jobId`, the selected
+  `model` and `status: pending`.
 - `GET /translations/<jobId>`: returns `pending` with `partialText`, `done` with
-  `translatedText` and `detectedLanguage`, `failed` with `error`, or `cancelled`.
+  `translatedText`, `detectedLanguage` and selected `model`, `failed` with `error`, or `cancelled`.
 - `DELETE /translations/<jobId>`: cancels a queued translation. Returns HTTP 200
   with `{"status":"cancelled"}`; repeating cancellation has the same result.
   Running or completed jobs return HTTP 409; unknown jobs return HTTP 404.
@@ -56,6 +57,31 @@ lines before language detection and translation. Spaces and line breaks are
 preserved by this normalization; characters within nonempty text and language
 joiners such as U+200C are kept. Input containing only whitespace and these
 placeholders is rejected. The 10,000-character limit applies before normalization.
+
+## Choosing the model
+
+API 0.3.0+ accepts an optional `model` in each translation request:
+
+```sh
+curl -H 'Content-Type: application/json' \
+  -d '{"q":"Guten Tag.","source":"de","target":"cs","model":"translategemma:12b"}' \
+  http://127.0.0.1:5001/translate
+```
+
+Only models already installed on the configured Ollama server are accepted; the
+API never pulls a model. Use `ollama list` on that server to see their names.
+An omitted tag resolves to `:latest` if installed. Invalid or unavailable names
+return HTTP 400 before queueing; an unavailable Ollama connection returns 503.
+Models are loaded only when their jobs reach the single worker.
+
+Without `model`, the server's `--model` default is used. Selection belongs to the
+job, including while it waits in the queue; it does not alter any other job or
+the server default reported by `/health`. Submission and successful completion
+responses include the canonical installed model name. NLLB rejects model overrides.
+
+`GET /health` advertises `"capabilities":{"modelSelection":true}` for Ollama and
+`false` for NLLB. Clients specifying a model should check this flag first: older
+servers do not advertise the capability and may silently ignore extra JSON fields.
 
 ## Choosing the target language
 

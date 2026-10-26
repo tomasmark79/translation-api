@@ -18,7 +18,7 @@ class OllamaStub(BaseHTTPRequestHandler):
 
     def do_GET(self):
         assert self.path == "/api/tags"
-        body = json.dumps({"models": [{"name": "translategemma:4b"}]}).encode()
+        body = json.dumps({"models": [{"name": "translategemma:4b"}, {"name": "translategemma:12b"}]}).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -27,6 +27,7 @@ class OllamaStub(BaseHTTPRequestHandler):
     def do_POST(self):
         assert self.path == "/api/chat"
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        assert data["model"] in ("translategemma:4b", "translategemma:12b")
         assert len(data["messages"]) == 1
         assert data["messages"][0]["role"] == "user"
         assert data["messages"][0]["content"].endswith("\n\n\nAhoj.")
@@ -72,13 +73,19 @@ def main():
         else:
             raise AssertionError("API did not become ready")
         assert health == {"status": "ready", "version": version, "backend": "ollama",
-                          "model": "translategemma:4b", "device": "ollama"}, health
-        for text, expected in [
-            ("Ahoj. ", "Hello."),
-            ("Ahoj.\n \ufeff", "Hello.\n "),
-            ("Ahoj.\n \u200b\ufeff", "Hello.\n "),
+                          "model": "translategemma:4b", "device": "ollama",
+                          "capabilities": {"modelSelection": True}}, health
+        for text, expected, model in [
+            ("Ahoj. ", "Hello.", None),
+            ("Ahoj.\n \ufeff", "Hello.\n ", None),
+            ("Ahoj.\n \u200b\ufeff", "Hello.\n ", None),
+            ("Ahoj.", "Hello.", "translategemma:12b"),
+            ("Ahoj.", "Hello.", None),
         ]:
-            status, job = request(url + "/translate", {"q": text, "source": "cs", "target": "en"})
+            payload = {"q": text, "source": "cs", "target": "en"}
+            if model is not None:
+                payload["model"] = model
+            status, job = request(url + "/translate", payload)
             assert status == 202, status
             for _ in range(100):
                 _, result = request(url + "/translations/" + job["jobId"])
@@ -87,7 +94,8 @@ def main():
                 time.sleep(0.01)
             assert result["status"] == "done", result
             assert result["translatedText"] == expected, result
-        print("Installed CLI, health, async translation, trailing whitespace and editor placeholders: OK")
+            assert result["model"] == (model or "translategemma:4b"), result
+        print("Installed CLI, health, async translation, model selection, trailing whitespace and editor placeholders: OK")
 
     finally:
         process.terminate()

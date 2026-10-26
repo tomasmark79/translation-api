@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="api-flow-title api-flow-desc">
   <title id="api-flow-title">How Translation API works</title>
-  <desc id="api-flow-desc">A client submits text to Translation API, receives a job ID, and polls for progress while a single worker translates text in chunks through Ollama and keeps the result in memory.</desc>
+  <desc id="api-flow-desc">A client submits text and an optional installed model to Translation API, receives a job ID, and polls for progress while a single worker translates text in chunks through Ollama using that job's model and keeps the result in memory.</desc>
   <defs>
     <marker id="api-flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 8 4 L 0 8 Z" fill="#4f5d75"/>
@@ -85,7 +85,7 @@
     <rect x="984" y="240" width="248" height="160" rx="6" fill="#ffffff" stroke="#4f5d75"/>
     <text x="1008" y="272" class="eyebrow">OLLAMA</text>
     <text x="1008" y="308" class="name">translategemma:4b</text>
-    <text x="1008" y="336" class="body">Stream translated text</text>
+    <text x="1008" y="336" class="body">Or installed job model</text>
     <text x="1008" y="376" class="mono">127.0.0.1:11434</text>
   </g>
 

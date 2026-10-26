@@ -114,6 +114,10 @@ The API validates each request and queues it for a single translation worker.
 The client receives a job ID immediately, then polls for progress and the final
 translation. Jobs and results are held in memory and are lost on restart.
 
+Ollama clients can optionally choose an installed model per request with
+`"model":"translategemma:12b"`. Omitting it uses the server default. See
+[model selection](docs/api.md#choosing-the-model) for the request format and capability check.
+
 The diagram shows the default Ollama setup. It is a static overview; update it
 when the request flow changes. See the [HTTP API](docs/api.md) for endpoint details,
 queue cancellation and limits.

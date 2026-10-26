@@ -31,14 +31,19 @@ def api_request(url, data=None, method=None):
         raise RuntimeError(f"Translation API connection failed: {error.reason}") from error
 
 
-def translate_api(url, text, on_progress):
+def translate_api(url, text, on_progress, model=None):
     url = url.rstrip("/")
     health = api_request(url + "/health")
     print(f"Translation API: {url}\nServer version: {health.get('version', 'unknown (not reported)')}\n"
           f"Backend: {health.get('backend', 'unknown')}\n"
-          f"Model: {health.get('model', 'unknown')}", file=sys.stderr, flush=True)
+          f"Model: {model or health.get('model', 'unknown')}", file=sys.stderr, flush=True)
+    if model is not None and health.get("capabilities", {}).get("modelSelection") is not True:
+        raise ValueError("This API does not support per-request model selection. Upgrade the server.")
     print("Translating…", file=sys.stderr, flush=True)
-    job = api_request(url + "/translate", {"q": text, "source": "cs", "target": "en"})
+    payload = {"q": text, "source": "cs", "target": "en"}
+    if model is not None:
+        payload["model"] = model
+    job = api_request(url + "/translate", payload)
     if not isinstance(job.get("jobId"), str) or not job["jobId"]:
         raise ValueError("Translation API did not return a jobId.")
     job_url = url + "/translations/" + quote(job["jobId"], safe="")
@@ -83,13 +88,11 @@ def main():
     endpoints = parser.add_mutually_exclusive_group()
     endpoints.add_argument("--ollama-url", default="http://127.0.0.1:11434",
                         help="Ollama base URL (default: http://127.0.0.1:11434)")
-    endpoints.add_argument("--api-url", help="Translation API base URL; uses its configured model")
-    parser.add_argument("--model", help="Direct Ollama model (default: translategemma:4b)")
+    endpoints.add_argument("--api-url", help="Translation API base URL")
+    parser.add_argument("--model", help="Installed Ollama model; API mode defaults to the server model, direct mode to translategemma:4b")
     parser.add_argument("--file", type=Path, default=ROOT / "samples" / "babicka-cs.txt",
                         help="UTF-8 Czech input file (default: bundled Babička excerpt)")
     args = parser.parse_args()
-    if args.api_url and args.model:
-        parser.error("--model applies only to direct Ollama; --api-url uses the server's configured model.")
     try:
         text = args.file.read_text(encoding="utf-8")
         if not text.strip() or len(text) > 10000:
@@ -100,7 +103,7 @@ def main():
             if sys.stderr.isatty():
                 print(f"\rGenerated {len(partial):,} characters…", end="", file=sys.stderr, flush=True)
         if args.api_url:
-            result = translate_api(args.api_url, text, progress)
+            result = translate_api(args.api_url, text, progress, args.model)
         else:
             model = args.model or "translategemma:4b"
             print(f"Ollama: {args.ollama_url}\nModel: {model}", file=sys.stderr, flush=True)

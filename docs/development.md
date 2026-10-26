@@ -66,8 +66,10 @@ from `/health`; older servers without a version report `unknown (not reported)`.
 On servers supporting queue details, it also prints the waiting position and
 when translation starts. Ctrl+C attempts to cancel the submitted job; cancellation
 succeeds only while the job is still queued. A running job continues on the server.
-The model and upstream Ollama address are configured on that server; `--model`
-cannot override them. `--ollama-url` is for an actual Ollama endpoint exposing
+Add `--model translategemma:12b` to select another installed model for the sample
+job (requires API 0.3.0+ with the Ollama backend). Without it the server default
+is used. The upstream Ollama address remains configured on the server.
+`--ollama-url` is for an actual Ollama endpoint exposing
 `/api/tags` and `/api/chat`, whereas `--api-url` uses `/health`, `/translate` and
 `/translations/<jobId>`.
 
