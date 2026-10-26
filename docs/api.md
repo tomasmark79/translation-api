@@ -64,11 +64,6 @@ model. This prevents requests for missing source text in place of book separator
 A wholly nonlinguistic input is returned unchanged without language detection;
 that response does not include `detectedLanguage`.
 
-Consecutive text lines within a paragraph are grouped before sentence/size
-splitting, so wrapped words receive context from the surrounding lines. Blank
-lines and nonlinguistic separator lines remain boundaries. Single line breaks
-within translated prose may be reflowed; this is not a layout-preserving parser.
-
 ## Choosing the model
 
 API 0.3.0+ accepts an optional `model` in each translation request:
