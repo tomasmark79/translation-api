@@ -285,6 +285,23 @@ class JobLifetimeTests(unittest.TestCase):
 
 
 class OllamaTests(unittest.TestCase):
+    def test_structural_lines_never_reach_model(self):
+        requests = []
+        def fake_stream(url, data, on_piece):
+            requests.append(data["messages"][0]["content"].split("\n\n\n", 1)[1])
+            on_piece("Hello.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:12b"}]}), \
+             patch("server.request_stream", side_effect=fake_stream), \
+             patch("langdetect.detect") as detect:
+            translator = OllamaTranslator("translategemma:12b", "http://ollama")
+            for text in ("————", " \t\n", "123.", "\u200b\ufeff"):
+                self.assertEqual(translator.translate(text, "auto", "cs")["translatedText"],
+                                 normalize_translation_text(text))
+            detect.assert_not_called()
+            result = translator.translate("Ahoj.\n\n————\n42\nAhoj.", "cs", "en")
+            self.assertEqual(result["translatedText"], "Hello.\n\n————\n42\nHello.")
+        self.assertEqual(requests, ["Ahoj.", "Ahoj."])
+
     def test_stream_allows_ten_minutes_for_network_reads(self):
         response = BytesIO(b'{"done": true, "done_reason": "stop", "message": {"content": "Hello"}}\n')
         pieces = []

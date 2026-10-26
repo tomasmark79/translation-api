@@ -58,6 +58,12 @@ preserved by this normalization; characters within nonempty text and language
 joiners such as U+200C are kept. Input containing only whitespace and these
 placeholders is rejected. The 10,000-character limit applies before normalization.
 
+The Ollama backend preserves lines containing no Unicode letters (whitespace,
+separator rules such as `————`, numbers and symbols) without sending them to the
+model. This prevents requests for missing source text in place of book separators.
+A wholly nonlinguistic input is returned unchanged without language detection;
+that response does not include `detectedLanguage`.
+
 ## Choosing the model
 
 API 0.3.0+ accepts an optional `model` in each translation request:

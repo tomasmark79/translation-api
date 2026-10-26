@@ -183,6 +183,8 @@ class OllamaTranslator:
         from langdetect import detect, LangDetectException
 
         q = normalize_translation_text(q)
+        if not any(character.isalpha() for character in q):
+            return {"translatedText": q}
         if source == "auto":
             try:
                 source = detect(q)
@@ -195,7 +197,7 @@ class OllamaTranslator:
         target_name = LANGUAGE_NAMES.get(target, target)
         translated = []
         for part in re.split(r"(\n+)", q):
-            if not part.strip():
+            if not any(character.isalpha() for character in part):
                 translated.append(part)
                 continue
             lines = []
@@ -204,6 +206,9 @@ class OllamaTranslator:
                     continue
                 for chunk in split_text(sentence, len, 800):
                     if not chunk.strip():
+                        continue
+                    if not any(character.isalpha() for character in chunk):
+                        lines.append(chunk)
                         continue
                     pieces = []
                     def append_piece(piece):
