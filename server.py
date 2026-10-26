@@ -102,6 +102,22 @@ def normalize_translation_text(text):
     )
 
 
+def translation_blocks(text):
+    """Keep wrapped paragraph lines together; preserve structural boundaries."""
+    parts = re.split(r"((?:\r\n|\r|\n)+)", text)
+    index = 0
+    while index < len(parts):
+        part = parts[index]
+        if any(character.isalpha() for character in part):
+            while (index + 2 < len(parts)
+                   and parts[index + 1] in ("\n", "\r", "\r\n")
+                   and any(character.isalpha() for character in parts[index + 2])):
+                part += parts[index + 1] + parts[index + 2]
+                index += 2
+        yield part
+        index += 1
+
+
 def split_text(text, token_count, limit=480):
     """Split by actual token count without silently discarding any text."""
     if token_count(text) <= limit:
@@ -196,7 +212,7 @@ class OllamaTranslator:
         source_name = LANGUAGE_NAMES.get(source, source)
         target_name = LANGUAGE_NAMES.get(target, target)
         translated = []
-        for part in re.split(r"(\n+)", q):
+        for part in translation_blocks(q):
             if not any(character.isalpha() for character in part):
                 translated.append(part)
                 continue

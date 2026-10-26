@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import VERSION, Jobs, OllamaTranslator, make_server, normalize_translation_text, request_stream, split_text
+from server import VERSION, Jobs, OllamaTranslator, make_server, normalize_translation_text, request_stream, split_text, translation_blocks
 from unittest.mock import patch
 
 
@@ -285,6 +285,17 @@ class JobLifetimeTests(unittest.TestCase):
 
 
 class OllamaTests(unittest.TestCase):
+    def test_wrapped_words_keep_context_on_both_sides(self):
+        requests = []
+        def fake_stream(url, data, on_piece):
+            requests.append(data["messages"][0]["content"].split("\n\n\n", 1)[1])
+            on_piece("Přeloženo.")
+        with patch("server.request_json", return_value={"models": [{"name": "translategemma:12b"}]}), \
+             patch("server.request_stream", side_effect=fake_stream):
+            translator = OllamaTranslator("translategemma:12b", "http://ollama")
+            translator.translate("Der\nWelt als Vorstellung\n\nDas ist ein\nBeispiel.", "de", "cs")
+        self.assertEqual(requests, ["Der\nWelt als Vorstellung", "Das ist ein\nBeispiel."])
+
     def test_structural_lines_never_reach_model(self):
         requests = []
         def fake_stream(url, data, on_piece):
@@ -508,6 +519,16 @@ class ModelSelectionTests(unittest.TestCase):
 
 
 class NormalizationTests(unittest.TestCase):
+    def test_paragraph_blocks_preserve_text_and_structural_boundaries(self):
+        for newline in ("\n", "\r\n", "\r"):
+            text = newline.join(["Der", "Welt als Vorstellung", "", "Text", "————", "42", "More", "text", ""])
+            blocks = list(translation_blocks(text))
+            self.assertEqual("".join(blocks), text)
+            self.assertIn("Der" + newline + "Welt als Vorstellung", blocks)
+            self.assertIn("More" + newline + "text", blocks)
+            self.assertIn("————", blocks)
+            self.assertIn("42", blocks)
+
     def test_preserves_whitespace_and_characters_in_nonempty_text(self):
         for text, expected in [
             ("Ahoj.\r\n \ufeff\u200b\r\nDalší.", "Ahoj.\r\n \r\nDalší."),
