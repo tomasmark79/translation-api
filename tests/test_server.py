@@ -303,13 +303,16 @@ class OllamaTests(unittest.TestCase):
             translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
             result = translator.translate("Good morning.\n \ufeff", "auto", "de")
         detect.assert_called_once_with("Good morning.\n ")
-        self.assertIn("from English into German", requests[0]["messages"][0]["content"])
+        self.assertIn("English (en) to German (de)", requests[0]["messages"][0]["content"])
+        self.assertEqual(len(requests[0]["messages"]), 1)
+        self.assertEqual(requests[0]["messages"][0]["role"], "user")
+        self.assertTrue(requests[0]["messages"][0]["content"].endswith("\n\n\nGood morning."))
         self.assertEqual(result["translatedText"], "Guten Morgen.\n ")
 
     def test_blank_line_placeholders_never_reach_ollama(self):
         requests = []
         def fake_stream(url, data, on_piece, timeout=120):
-            requests.append(data["messages"][1]["content"])
+            requests.append(data["messages"][0]["content"].split("\n\n\n", 1)[1])
             on_piece("Hello.")
         with patch("server.request_json", return_value={"models": [{"name": "translategemma:4b"}]}), \
              patch("server.request_stream", fake_stream):
@@ -372,12 +375,14 @@ class OllamaTests(unittest.TestCase):
             translator = OllamaTranslator("translategemma:4b", "http://127.0.0.1:11434")
             result = translator.translate("Ahoj.", "cs", "en")
         self.assertEqual(result["translatedText"], "Hello.")
-        self.assertIn("from Czech into English", requests[0]["messages"][0]["content"])
+        self.assertIn("Czech (cs) to English (en)", requests[0]["messages"][0]["content"])
+        self.assertEqual(len(requests[0]["messages"]), 1)
+        self.assertTrue(requests[0]["messages"][0]["content"].endswith("\n\n\nAhoj."))
 
     def test_trailing_space_does_not_send_empty_text_to_ollama(self):
         requests = []
         def fake_stream(url, data, on_piece, timeout=120):
-            text = data["messages"][1]["content"]
+            text = data["messages"][0]["content"].split("\n\n\n", 1)[1]
             self.assertTrue(text.strip())
             requests.append(text)
             on_piece("Hello.")

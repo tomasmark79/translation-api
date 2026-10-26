@@ -27,7 +27,9 @@ class OllamaStub(BaseHTTPRequestHandler):
     def do_POST(self):
         assert self.path == "/api/chat"
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        assert data["messages"][-1]["content"] == "Ahoj."
+        assert len(data["messages"]) == 1
+        assert data["messages"][0]["role"] == "user"
+        assert data["messages"][0]["content"].endswith("\n\n\nAhoj.")
         body = b'{"message":{"content":"Hello."},"done":false}\n'
         body += b'{"done":true,"done_reason":"stop"}\n'
         self.send_response(200)
